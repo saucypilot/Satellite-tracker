@@ -2,13 +2,13 @@ import * as THREE from "three";
 import * as satellite from "satellite.js";
 import { EARTH_RADIUS, SCALE } from "./utils/coords.js";
 
-const ACTIVE_SATELLITES_TLE_URL =
-  "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle";
+const STATIONS_TLE_URL =
+  "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle";
 
 export class SatelliteTracker {
   constructor(
     scene,
-    { maxSatellites = 1000, tleUrl = ACTIVE_SATELLITES_TLE_URL } = {}
+    { maxSatellites = 1000, tleUrl = STATIONS_TLE_URL } = {}
   ) {
     this.scene = scene;
     this.maxSatellites = maxSatellites;
@@ -52,7 +52,7 @@ export class SatelliteTracker {
   createSatelliteMesh() {
     return new THREE.Mesh(
       new THREE.SphereGeometry(0.015, 8, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffcc00 })
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
     );
   }
 
