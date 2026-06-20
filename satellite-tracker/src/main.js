@@ -97,6 +97,13 @@ const clouds = new THREE.Mesh(
 
 scene.add(clouds);
 
+const userLocationMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.08, 24, 24),
+  new THREE.MeshBasicMaterial({ color: 0xff0000 })
+);
+userLocationMarker.visible = false;
+scene.add(userLocationMarker);
+
 const light = new THREE.DirectionalLight(0xffffff, 2);
 light.position.set(5, 3, 5);
 scene.add(light);
@@ -179,6 +186,29 @@ function updateSunPosition(date) {
     geodeticToSceneDirection(subsolarPoint.lat, subsolarPoint.lon)
   );
   light.position.copy(sunPosition.copy(sunDirection).multiplyScalar(8));
+}
+
+function updateUserLocationMarker(lat, lon) {
+  userLocationMarker.position.copy(
+    geodeticToSceneDirection(lat, lon).multiplyScalar(EARTH_SIZE * 1.025)
+  );
+  userLocationMarker.visible = true;
+}
+
+if ("geolocation" in navigator) {
+  navigator.geolocation.watchPosition(
+    ({ coords }) => {
+      updateUserLocationMarker(coords.latitude, coords.longitude);
+    },
+    (error) => {
+      console.warn("Unable to get user location:", error.message);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 30000,
+      timeout: 10000,
+    }
+  );
 }
 
 async function loadTLEs() {
