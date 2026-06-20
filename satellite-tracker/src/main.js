@@ -1,8 +1,12 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Earth } from "./earth.js";
-import { SatelliteTracker } from "./satellites.js";
+import { CELESTRAK_GROUPS, SatelliteTracker } from "./satellites.js";
+import { SatelliteGroupSelector } from "./SatelliteGroupSelector.js";
 import { UserLocationMarker } from "./UserLocationMarker.js";
+import "./style.css";
+
+const DEFAULT_SELECTED_GROUPS = ["stations"];
 
 class SatelliteTrackerApp {
   constructor(container = document.body) {
@@ -14,12 +18,19 @@ class SatelliteTrackerApp {
     this.pointer = new THREE.Vector2();
     this.controls = this.createControls();
     this.earth = new Earth(this.renderer);
-    this.satelliteTracker = new SatelliteTracker(this.scene);
+    this.satelliteTracker = new SatelliteTracker(this.scene, {
+      groups: DEFAULT_SELECTED_GROUPS,
+    });
     this.userLocationMarker = new UserLocationMarker(this.scene);
+    this.groupSelector = new SatelliteGroupSelector({
+      groups: CELESTRAK_GROUPS,
+      selectedGroups: DEFAULT_SELECTED_GROUPS,
+      onChange: (groups) => this.loadSatelliteGroups(groups),
+    });
 
     this.earth.addTo(this.scene);
     this.userLocationMarker.startTracking();
-    this.satelliteTracker.load();
+    this.loadSatelliteGroups(DEFAULT_SELECTED_GROUPS);
     this.bindEvents();
   }
 
@@ -61,6 +72,21 @@ class SatelliteTrackerApp {
     this.renderer.domElement.addEventListener("click", (event) =>
       this.handleClick(event)
     );
+  }
+
+  async loadSatelliteGroups(groups) {
+    this.groupSelector.setLoading(true);
+    this.groupSelector.setStatus("Loading...");
+
+    try {
+      const count = await this.satelliteTracker.load(groups);
+      this.groupSelector.setStatus(`${count} satellites`);
+    } catch (error) {
+      console.error("Unable to load satellite data:", error);
+      this.groupSelector.setStatus("Unable to load satellites");
+    } finally {
+      this.groupSelector.setLoading(false);
+    }
   }
 
   resize() {

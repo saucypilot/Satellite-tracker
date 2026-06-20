@@ -1,0 +1,85 @@
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  overflow: hidden;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #05070b;
+}
+
+canvas {
+  display: block;
+}
+
+.satellite-panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  width: min(280px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 14px;
+  box-sizing: border-box;
+  overflow: auto;
+  color: #f5f7fb;
+  background: rgba(12, 16, 24, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(12px);
+}
+
+.satellite-panel h1 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.satellite-group-list {
+  display: grid;
+  gap: 8px;
+}
+
+.satellite-group-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 24px;
+  font-size: 13px;
+  line-height: 1.25;
+  color: #e7edf8;
+  cursor: pointer;
+}
+
+.satellite-group-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #66ccff;
+}
+
+.satellite-group-option span {
+  overflow-wrap: anywhere;
+}
+
+.satellite-status {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #a9b6c8;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.satellite-panel.is-loading {
+  cursor: progress;
+}
+
+.satellite-panel.is-loading .satellite-group-option {
+  color: #8794a8;
+  cursor: progress;
+}

@@ -2,51 +2,119 @@ import * as THREE from "three";
 import * as satellite from "satellite.js";
 import { EARTH_RADIUS, SCALE } from "./utils/coords.js";
 
-const STATIONS_TLE_URL =
-  "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle";
+const CELESTRAK_TLE_BASE_URL =
+  "https://celestrak.org/NORAD/elements/gp.php?FORMAT=tle";
+
+export const CELESTRAK_GROUPS = [
+  { id: "stations", label: "ISS & space stations" },
+  { id: "active", label: "All active satellites" },
+  { id: "starlink", label: "Starlink" },
+  { id: "gps-ops", label: "GPS satellites" },
+  { id: "weather", label: "Weather satellites" },
+  { id: "resource", label: "Earth observation" },
+  { id: "sar", label: "SAR satellites" },
+  { id: "sarsat", label: "Search & rescue" },
+  { id: "last-30-days", label: "Last 30 days launches" },
+  { id: "geo", label: "Geostationary satellites" },
+];
 
 export class SatelliteTracker {
   constructor(
     scene,
-    { maxSatellites = 1000, tleUrl = STATIONS_TLE_URL } = {}
+    { maxSatellites = 3000, groups = ["stations"] } = {}
   ) {
     this.scene = scene;
     this.maxSatellites = maxSatellites;
-    this.tleUrl = tleUrl;
+    this.groups = groups;
     this.satellites = [];
     this.satelliteByMesh = new Map();
     this.selectedSatellite = null;
     this.trajectoryLine = null;
+    this.loadId = 0;
   }
 
-  async load() {
-    const res = await fetch(this.tleUrl);
-    const text = await res.text();
-    const lines = text.trim().split("\n");
+  async load(groups = this.groups) {
+    const loadId = ++this.loadId;
+
+    this.groups = groups;
+    this.clearSatellites();
+
+    if (groups.length === 0) {
+      return 0;
+    }
+
+    const results = await Promise.allSettled(
+      groups.map((group) => this.fetchGroup(group))
+    );
+    const tleTexts = results
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value);
+
+    if (loadId !== this.loadId) {
+      return this.satellites.length;
+    }
+
+    if (tleTexts.length === 0) {
+      const failedGroups = groups.join(", ");
+      throw new Error(`No CelesTrak groups loaded: ${failedGroups}`);
+    }
+
     const satellites = [];
+    const catalogIds = new Set();
 
-    for (
-      let i = 0;
-      i < lines.length && satellites.length < this.maxSatellites;
-      i += 3
-    ) {
-      const name = lines[i].trim();
-      const tle1 = lines[i + 1]?.trim();
-      const tle2 = lines[i + 2]?.trim();
+    for (const text of tleTexts) {
+      const lines = text.trim().split("\n");
 
-      if (!tle1 || !tle2) continue;
+      for (
+        let i = 0;
+        i < lines.length && satellites.length < this.maxSatellites;
+        i += 3
+      ) {
+        const name = lines[i].trim();
+        const tle1 = lines[i + 1]?.trim();
+        const tle2 = lines[i + 2]?.trim();
+        const catalogId = tle1?.slice(2, 7);
 
-      const satrec = satellite.twoline2satrec(tle1, tle2);
-      const mesh = this.createSatelliteMesh();
+        if (!tle1 || !tle2 || catalogIds.has(catalogId)) continue;
 
-      this.scene.add(mesh);
-      const sat = { name, satrec, mesh };
+        const satrec = satellite.twoline2satrec(tle1, tle2);
+        const mesh = this.createSatelliteMesh();
+        const sat = { name, satrec, mesh };
 
-      this.satelliteByMesh.set(mesh, sat);
-      satellites.push(sat);
+        catalogIds.add(catalogId);
+        this.satelliteByMesh.set(mesh, sat);
+        this.scene.add(mesh);
+        satellites.push(sat);
+      }
     }
 
     this.satellites = satellites;
+    return satellites.length;
+  }
+
+  async fetchGroup(group) {
+    const url = `${CELESTRAK_TLE_BASE_URL}&GROUP=${encodeURIComponent(group)}`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error(`Failed to load CelesTrak group "${group}"`);
+    }
+
+    return res.text();
+  }
+
+  clearSatellites() {
+    this.clearTrajectory();
+    this.selectedSatellite = null;
+    this.satelliteByMesh.clear();
+
+    for (const sat of this.satellites) {
+      this.scene.remove(sat.mesh);
+      sat.mesh.geometry.dispose();
+      sat.mesh.material.dispose();
+    }
+
+    this.satellites = [];
   }
 
   update(date) {
