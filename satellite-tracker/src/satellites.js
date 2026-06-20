@@ -49,8 +49,10 @@ export class SatelliteTracker {
     this.satellites = [];
     this.satelliteByMesh = new Map();
     this.selectedSatellite = null;
+    this.selectionMarker = this.createSelectionMarker();
     this.trajectoryLine = null;
     this.loadId = 0;
+    this.scene.add(this.selectionMarker);
   }
 
   async load(groups = this.groups) {
@@ -124,8 +126,7 @@ export class SatelliteTracker {
   }
 
   clearSatellites() {
-    this.clearTrajectory();
-    this.selectedSatellite = null;
+    this.clearSelection();
     this.satelliteByMesh.clear();
 
     for (const sat of this.satellites) {
@@ -151,6 +152,22 @@ export class SatelliteTracker {
         toneMapped: false,
       })
     );
+  }
+
+  createSelectionMarker() {
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.065, 16, 16),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.95,
+        toneMapped: false,
+      })
+    );
+
+    marker.visible = false;
+    return marker;
   }
 
   getSatelliteMeshes() {
@@ -183,14 +200,23 @@ export class SatelliteTracker {
   selectSatelliteByMesh(mesh, date) {
     const sat = this.satelliteByMesh.get(mesh);
 
-    if (!sat) return;
+    if (!sat) return null;
 
-    this.selectSatellite(sat, date);
+    return this.selectSatellite(sat, date);
   }
 
   selectSatellite(sat, date) {
+    if (this.selectedSatellite) {
+      this.selectedSatellite.mesh.scale.setScalar(1);
+    }
+
     this.selectedSatellite = sat;
+    sat.mesh.scale.setScalar(1.9);
+    this.selectionMarker.visible = true;
+    this.selectionMarker.position.copy(sat.mesh.position);
     this.drawTrajectory(sat, date);
+
+    return sat;
   }
 
   drawTrajectory(sat, date) {
@@ -232,6 +258,16 @@ export class SatelliteTracker {
     this.trajectoryLine = null;
   }
 
+  clearSelection() {
+    if (this.selectedSatellite) {
+      this.selectedSatellite.mesh.scale.setScalar(1);
+    }
+
+    this.selectedSatellite = null;
+    this.selectionMarker.visible = false;
+    this.clearTrajectory();
+  }
+
   getOrbitalPeriodMinutes(sat) {
     if (!sat.satrec.no) return 90;
 
@@ -244,6 +280,10 @@ export class SatelliteTracker {
     if (!position) return;
 
     sat.mesh.position.copy(position);
+
+    if (sat === this.selectedSatellite) {
+      this.selectionMarker.position.copy(position);
+    }
   }
 
   getSatelliteScenePosition(sat, date) {

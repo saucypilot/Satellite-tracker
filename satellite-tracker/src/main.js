@@ -82,6 +82,7 @@ class SatelliteTrackerApp {
   async loadSatelliteGroups(groups) {
     this.groupSelector.setLoading(true);
     this.groupSelector.setStatus("Loading...");
+    this.groupSelector.setSelectedSatellite(null);
 
     try {
       const count = await this.satelliteTracker.load(groups);
@@ -123,15 +124,24 @@ class SatelliteTrackerApp {
       );
 
       if (nearbySatellite) {
-        this.satelliteTracker.selectSatellite(nearbySatellite, new Date());
+        const selected = this.satelliteTracker.selectSatellite(
+          nearbySatellite,
+          new Date()
+        );
+        this.groupSelector.setSelectedSatellite(selected);
         return;
       }
 
-      this.satelliteTracker.clearTrajectory();
+      this.satelliteTracker.clearSelection();
+      this.groupSelector.setSelectedSatellite(null);
       return;
     }
 
-    this.satelliteTracker.selectSatelliteByMesh(intersects[0].object, new Date());
+    const selected = this.satelliteTracker.selectSatelliteByMesh(
+      intersects[0].object,
+      new Date()
+    );
+    this.groupSelector.setSelectedSatellite(selected);
   }
 
   animate() {

@@ -4,8 +4,10 @@ export class SatelliteGroupSelector {
     this.selectedGroups = new Set(selectedGroups);
     this.groupColors = groupColors;
     this.onChange = onChange;
+    this.groupLabels = new Map(groups.map((group) => [group.id, group.label]));
     this.element = this.createElement();
     this.statusElement = this.element.querySelector("[data-status]");
+    this.selectedElement = this.element.querySelector("[data-selected]");
 
     document.body.appendChild(this.element);
   }
@@ -30,8 +32,14 @@ export class SatelliteGroupSelector {
     status.dataset.status = "";
     status.textContent = "Loading...";
 
+    const selected = document.createElement("div");
+    selected.className = "selected-satellite";
+    selected.dataset.selected = "";
+    selected.textContent = "No satellite selected";
+
     panel.appendChild(list);
     panel.appendChild(status);
+    panel.appendChild(selected);
 
     return panel;
   }
@@ -80,5 +88,15 @@ export class SatelliteGroupSelector {
 
   setStatus(text) {
     this.statusElement.textContent = text;
+  }
+
+  setSelectedSatellite(sat) {
+    if (!sat) {
+      this.selectedElement.textContent = "No satellite selected";
+      return;
+    }
+
+    const groupLabel = this.groupLabels.get(sat.group) ?? sat.group;
+    this.selectedElement.textContent = `${sat.name} - ${groupLabel}`;
   }
 }
