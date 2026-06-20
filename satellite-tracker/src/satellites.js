@@ -18,6 +18,26 @@ export const CELESTRAK_GROUPS = [
   { id: "geo", label: "Geostationary satellites" },
 ];
 
+const SATELLITE_GROUP_COLORS = {
+  stations: 0xffffff,
+  active: 0x9ca3ff,
+  starlink: 0x35d4ff,
+  "gps-ops": 0x2eff8f,
+  weather: 0xffd166,
+  resource: 0xff7f50,
+  sar: 0xff4fd8,
+  sarsat: 0xff4040,
+  "last-30-days": 0xb6ff3b,
+  geo: 0xc084fc,
+};
+
+export const SATELLITE_GROUP_COLOR_HEX = Object.fromEntries(
+  Object.entries(SATELLITE_GROUP_COLORS).map(([group, color]) => [
+    group,
+    `#${color.toString(16).padStart(6, "0")}`,
+  ])
+);
+
 export class SatelliteTracker {
   constructor(
     scene,
@@ -46,7 +66,7 @@ export class SatelliteTracker {
     const results = await Promise.allSettled(
       groups.map((group) => this.fetchGroup(group))
     );
-    const tleTexts = results
+    const tleGroups = results
       .filter((result) => result.status === "fulfilled")
       .map((result) => result.value);
 
@@ -54,7 +74,7 @@ export class SatelliteTracker {
       return this.satellites.length;
     }
 
-    if (tleTexts.length === 0) {
+    if (tleGroups.length === 0) {
       const failedGroups = groups.join(", ");
       throw new Error(`No CelesTrak groups loaded: ${failedGroups}`);
     }
@@ -62,7 +82,7 @@ export class SatelliteTracker {
     const satellites = [];
     const catalogIds = new Set();
 
-    for (const text of tleTexts) {
+    for (const { group, text } of tleGroups) {
       const lines = text.trim().split("\n");
 
       for (
@@ -78,8 +98,8 @@ export class SatelliteTracker {
         if (!tle1 || !tle2 || catalogIds.has(catalogId)) continue;
 
         const satrec = satellite.twoline2satrec(tle1, tle2);
-        const mesh = this.createSatelliteMesh();
-        const sat = { name, satrec, mesh };
+        const mesh = this.createSatelliteMesh(group);
+        const sat = { name, group, satrec, mesh };
 
         catalogIds.add(catalogId);
         this.satelliteByMesh.set(mesh, sat);
@@ -100,7 +120,7 @@ export class SatelliteTracker {
       throw new Error(`Failed to load CelesTrak group "${group}"`);
     }
 
-    return res.text();
+    return { group, text: await res.text() };
   }
 
   clearSatellites() {
@@ -123,10 +143,13 @@ export class SatelliteTracker {
     }
   }
 
-  createSatelliteMesh() {
+  createSatelliteMesh(group) {
     return new THREE.Mesh(
-      new THREE.SphereGeometry(0.015, 8, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+      new THREE.SphereGeometry(0.025, 12, 12),
+      new THREE.MeshBasicMaterial({
+        color: SATELLITE_GROUP_COLORS[group] ?? 0xffffff,
+        toneMapped: false,
+      })
     );
   }
 

@@ -1,7 +1,8 @@
 export class SatelliteGroupSelector {
-  constructor({ groups, selectedGroups, onChange }) {
+  constructor({ groups, selectedGroups, groupColors, onChange }) {
     this.groups = groups;
     this.selectedGroups = new Set(selectedGroups);
+    this.groupColors = groupColors;
     this.onChange = onChange;
     this.element = this.createElement();
     this.statusElement = this.element.querySelector("[data-status]");
@@ -45,10 +46,15 @@ export class SatelliteGroupSelector {
     checkbox.checked = this.selectedGroups.has(group.id);
     checkbox.addEventListener("change", () => this.handleChange(checkbox));
 
+    const swatch = document.createElement("span");
+    swatch.className = "satellite-group-swatch";
+    swatch.style.backgroundColor = this.groupColors[group.id] ?? "#ffffff";
+
     const text = document.createElement("span");
     text.textContent = group.label;
 
     label.appendChild(checkbox);
+    label.appendChild(swatch);
     label.appendChild(text);
 
     return label;

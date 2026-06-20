@@ -1,7 +1,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Earth } from "./earth.js";
-import { CELESTRAK_GROUPS, SatelliteTracker } from "./satellites.js";
+import {
+  CELESTRAK_GROUPS,
+  SATELLITE_GROUP_COLOR_HEX,
+  SatelliteTracker,
+} from "./satellites.js";
 import { SatelliteGroupSelector } from "./SatelliteGroupSelector.js";
 import { UserLocationMarker } from "./UserLocationMarker.js";
 import "./style.css";
@@ -25,6 +29,7 @@ class SatelliteTrackerApp {
     this.groupSelector = new SatelliteGroupSelector({
       groups: CELESTRAK_GROUPS,
       selectedGroups: DEFAULT_SELECTED_GROUPS,
+      groupColors: SATELLITE_GROUP_COLOR_HEX,
       onChange: (groups) => this.loadSatelliteGroups(groups),
     });
 

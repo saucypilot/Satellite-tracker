@@ -45,7 +45,7 @@ canvas {
 
 .satellite-group-option {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 18px 12px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
   min-height: 24px;
@@ -53,6 +53,14 @@ canvas {
   line-height: 1.25;
   color: #e7edf8;
   cursor: pointer;
+}
+
+.satellite-group-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor;
 }
 
 .satellite-group-option input {
