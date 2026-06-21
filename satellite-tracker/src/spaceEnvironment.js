@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import moonTextureUrl from "./assets/2k_moon.jpg";
-import starsTextureUrl from "./assets/2k_stars_milky_way.jpg";
+import moonTextureUrl from "./assets/8k_moon.jpg";
+import starsTextureUrl from "./assets/8k_stars_milky_way.jpg";
 import {
   SCALE,
   geodeticToScenePosition,

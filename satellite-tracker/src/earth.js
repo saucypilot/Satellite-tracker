@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import earthDayMapUrl from "./assets/2k_earth_daymap.jpg";
-import earthNightMapUrl from "./assets/2k_earth_nightmap.jpg";
-import earthCloudsMapUrl from "./assets/2k_earth_clouds.jpg";
+import earthDayMapUrl from "./assets/8k_earth_daymap.jpg";
+import earthNightMapUrl from "./assets/8k_earth_nightmap.jpg";
+import earthCloudsMapUrl from "./assets/8k_earth_clouds.jpg";
 import {
   EARTH_SIZE,
   geodeticToSceneDirection,
