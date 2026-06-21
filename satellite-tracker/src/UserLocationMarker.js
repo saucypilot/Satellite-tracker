@@ -3,6 +3,9 @@ import { EARTH_SIZE, geodeticToScenePosition } from "./utils/coords.js";
 
 export class UserLocationMarker {
   constructor(scene) {
+    this.watchId = null;
+    this.retryTimeoutId = null;
+    this.permissionStatus = null;
     this.mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.08, 24, 24),
       new THREE.MeshBasicMaterial({ color: 0xff0000 })
@@ -18,19 +21,82 @@ export class UserLocationMarker {
       return;
     }
 
-    navigator.geolocation.watchPosition(
+    this.observePermissionChanges();
+    this.requestCurrentPosition();
+  }
+
+  observePermissionChanges() {
+    if (!navigator.permissions?.query || this.permissionStatus) return;
+
+    navigator.permissions
+      .query({ name: "geolocation" })
+      .then((permissionStatus) => {
+        this.permissionStatus = permissionStatus;
+        permissionStatus.onchange = () => {
+          if (permissionStatus.state === "granted") {
+            this.requestCurrentPosition();
+          }
+        };
+      })
+      .catch(() => {
+        this.permissionStatus = null;
+      });
+  }
+
+  requestCurrentPosition() {
+    window.clearTimeout(this.retryTimeoutId);
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        this.update(coords.latitude, coords.longitude);
+        this.startWatchingPosition();
+      },
+      (error) => {
+        this.handleLocationError(error);
+      },
+      this.getPositionOptions()
+    );
+  }
+
+  startWatchingPosition() {
+    if (this.watchId !== null) return;
+
+    this.watchId = navigator.geolocation.watchPosition(
       ({ coords }) => {
         this.update(coords.latitude, coords.longitude);
       },
       (error) => {
-        console.warn("Unable to get user location:", error.message);
+        this.handleLocationError(error);
       },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 30000,
-        timeout: 10000,
-      }
+      this.getPositionOptions()
     );
+  }
+
+  handleLocationError(error) {
+    console.warn("Unable to get user location:", error.message);
+
+    if (error.code === error.PERMISSION_DENIED) return;
+
+    this.retryTimeoutId = window.setTimeout(() => {
+      this.requestCurrentPosition();
+    }, 1500);
+  }
+
+  getPositionOptions() {
+    return {
+      enableHighAccuracy: true,
+      maximumAge: 30000,
+      timeout: 20000,
+    };
+  }
+
+  stopTracking() {
+    window.clearTimeout(this.retryTimeoutId);
+
+    if (this.watchId !== null) {
+      navigator.geolocation.clearWatch(this.watchId);
+      this.watchId = null;
+    }
   }
 
   update(lat, lon) {
