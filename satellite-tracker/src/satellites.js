@@ -33,6 +33,9 @@ const SATELLITE_GROUP_COLORS = {
   "last-30-days": 0xb6ff3b,
   geo: 0xc084fc,
 };
+const SATELLITE_BLINK_SPEED = 0.004;
+const SATELLITE_BLINK_MIN_OPACITY = 0.55;
+const SATELLITE_BLINK_MAX_OPACITY = 1;
 
 export const SATELLITE_GROUP_COLOR_HEX = Object.fromEntries(
   Object.entries(SATELLITE_GROUP_COLORS).map(([group, color]) => [
@@ -245,6 +248,7 @@ export class SatelliteTracker {
           orbitalPeriodMinutes: this.getOrbitalPeriodMinutes({ satrec }),
           inclinationDegrees: THREE.MathUtils.radToDeg(satrec.inclo),
           eccentricity: satrec.ecco,
+          blinkPhase: satellites.length * 0.73,
         };
 
         catalogIds.add(catalogId);
@@ -330,8 +334,11 @@ export class SatelliteTracker {
   }
 
   update(date) {
+    const timestamp = date.getTime();
+
     for (const sat of this.satellites) {
       this.updateSatellitePosition(sat, date);
+      this.updateSatelliteBlink(sat, timestamp);
     }
   }
 
@@ -340,8 +347,21 @@ export class SatelliteTracker {
       new THREE.SphereGeometry(0.025, 12, 12),
       new THREE.MeshBasicMaterial({
         color: SATELLITE_GROUP_COLORS[group] ?? 0xffffff,
+        transparent: true,
+        opacity: SATELLITE_BLINK_MAX_OPACITY,
         toneMapped: false,
       })
+    );
+  }
+
+  updateSatelliteBlink(sat, timestamp) {
+    const blink =
+      (Math.sin(timestamp * SATELLITE_BLINK_SPEED + sat.blinkPhase) + 1) / 2;
+
+    sat.mesh.material.opacity = THREE.MathUtils.lerp(
+      SATELLITE_BLINK_MIN_OPACITY,
+      SATELLITE_BLINK_MAX_OPACITY,
+      blink
     );
   }
 
