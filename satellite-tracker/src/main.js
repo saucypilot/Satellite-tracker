@@ -8,6 +8,7 @@ import {
 } from "./satellites.js";
 import { SatelliteGroupSelector } from "./SatelliteGroupSelector.js";
 import { UserLocationMarker } from "./UserLocationMarker.js";
+import { SpaceEnvironment } from "./spaceEnvironment.js";
 import "./style.css";
 
 const DEFAULT_SELECTED_GROUPS = ["stations"];
@@ -22,6 +23,7 @@ class SatelliteTrackerApp {
     this.pointer = new THREE.Vector2();
     this.controls = this.createControls();
     this.earth = new Earth(this.renderer);
+    this.spaceEnvironment = new SpaceEnvironment(this.renderer);
     this.satelliteTracker = new SatelliteTracker(this.scene, {
       groups: DEFAULT_SELECTED_GROUPS,
     });
@@ -33,6 +35,7 @@ class SatelliteTrackerApp {
       onChange: (groups) => this.loadSatelliteGroups(groups),
     });
 
+    this.spaceEnvironment.addTo(this.scene);
     this.earth.addTo(this.scene);
     this.userLocationMarker.startTracking();
     this.loadSatelliteGroups(DEFAULT_SELECTED_GROUPS);
@@ -135,6 +138,20 @@ class SatelliteTrackerApp {
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
 
+    const moonIntersects = this.raycaster.intersectObject(
+      this.spaceEnvironment.getMoonMesh(),
+      false
+    );
+
+    if (moonIntersects.length > 0) {
+      this.spaceEnvironment.showMoonOrbit();
+      this.satelliteTracker.clearSelection();
+      this.groupSelector.setSelectedSatellite(null);
+      return;
+    }
+
+    this.spaceEnvironment.hideMoonOrbit();
+
     const intersects = this.raycaster.intersectObjects(
       this.satelliteTracker.getSatelliteMeshes(),
       false
@@ -173,6 +190,7 @@ class SatelliteTrackerApp {
     requestAnimationFrame(() => this.animate());
 
     const now = new Date();
+    this.spaceEnvironment.update(now);
     this.earth.update(now);
     this.satelliteTracker.update(now);
     this.controls.update();
