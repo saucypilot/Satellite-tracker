@@ -12,6 +12,10 @@ import { SpaceEnvironment } from "./spaceEnvironment.js";
 import "./style.css";
 
 const DEFAULT_SELECTED_GROUPS = ["stations"];
+const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 20, 8);
+const DEFAULT_CAMERA_TARGET = new THREE.Vector3(0, 0, 0);
+const TRACKING_CAMERA_DISTANCE = 1.2;
+const TRACKING_CAMERA_LIFT = 0.35;
 
 class SatelliteTrackerApp {
   constructor(container = document.body) {
@@ -21,6 +25,7 @@ class SatelliteTrackerApp {
     this.renderer = this.createRenderer();
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
+    this.trackedSatellite = null;
     this.controls = this.createControls();
     this.earth = new Earth(this.renderer);
     this.spaceEnvironment = new SpaceEnvironment(this.renderer);
@@ -33,6 +38,7 @@ class SatelliteTrackerApp {
       selectedGroups: DEFAULT_SELECTED_GROUPS,
       groupColors: SATELLITE_GROUP_COLOR_HEX,
       onChange: (groups) => this.loadSatelliteGroups(groups),
+      onResetView: () => this.resetCameraView(),
     });
 
     this.spaceEnvironment.addTo(this.scene);
@@ -72,6 +78,7 @@ class SatelliteTrackerApp {
     const controls = new OrbitControls(this.camera, this.renderer.domElement);
 
     controls.enableDamping = true;
+    controls.target.copy(DEFAULT_CAMERA_TARGET);
     return controls;
   }
 
@@ -80,9 +87,13 @@ class SatelliteTrackerApp {
     this.renderer.domElement.addEventListener("click", (event) =>
       this.handleClick(event)
     );
+    this.renderer.domElement.addEventListener("dblclick", (event) =>
+      this.handleDoubleClick(event)
+    );
   }
 
   async loadSatelliteGroups(groups) {
+    this.trackedSatellite = null;
     this.groupSelector.setLoading(true);
     this.groupSelector.setStatus("Loading...");
     this.groupSelector.setSelectedSatellite(null);
@@ -130,6 +141,8 @@ class SatelliteTrackerApp {
   }
 
   handleClick(event) {
+    if (event.detail > 1) return;
+
     const rect = this.renderer.domElement.getBoundingClientRect();
 
     this.pointer.set(
@@ -144,6 +157,7 @@ class SatelliteTrackerApp {
     );
 
     if (moonIntersects.length > 0) {
+      this.trackedSatellite = null;
       this.spaceEnvironment.showMoonOrbit();
       this.satelliteTracker.clearSelection();
       this.groupSelector.setSelectedSatellite(null);
@@ -151,6 +165,7 @@ class SatelliteTrackerApp {
     }
 
     this.spaceEnvironment.hideMoonOrbit();
+    this.trackedSatellite = null;
 
     const intersects = this.raycaster.intersectObjects(
       this.satelliteTracker.getSatelliteMeshes(),
@@ -186,6 +201,73 @@ class SatelliteTrackerApp {
     this.groupSelector.setSelectedSatellite(selected);
   }
 
+  handleDoubleClick(event) {
+    const sat = this.findSatelliteFromPointer(event);
+
+    if (!sat) return;
+
+    this.spaceEnvironment.hideMoonOrbit();
+    this.trackedSatellite = sat;
+    this.satelliteTracker.selectSatellite(sat, new Date());
+    this.groupSelector.setSelectedSatellite(sat);
+    this.updateTrackingCamera(true);
+  }
+
+  findSatelliteFromPointer(event) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+
+    this.pointer.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    const intersects = this.raycaster.intersectObjects(
+      this.satelliteTracker.getSatelliteMeshes(),
+      false
+    );
+
+    if (intersects.length > 0) {
+      return this.satelliteTracker.getSatelliteByMesh(intersects[0].object);
+    }
+
+    return this.satelliteTracker.findSatelliteNearScreenPoint(
+      event.clientX,
+      event.clientY,
+      this.camera,
+      this.renderer.domElement
+    );
+  }
+
+  resetCameraView() {
+    this.trackedSatellite = null;
+    this.spaceEnvironment.hideMoonOrbit();
+    this.satelliteTracker.clearSelection();
+    this.groupSelector.setSelectedSatellite(null);
+    this.camera.position.copy(DEFAULT_CAMERA_POSITION);
+    this.controls.target.copy(DEFAULT_CAMERA_TARGET);
+    this.controls.update();
+  }
+
+  updateTrackingCamera(force = false) {
+    if (!this.trackedSatellite) return;
+
+    const target = this.trackedSatellite.mesh.position;
+    const radialDirection = target.clone().normalize();
+    const offset = radialDirection
+      .multiplyScalar(TRACKING_CAMERA_DISTANCE)
+      .add(new THREE.Vector3(0, TRACKING_CAMERA_LIFT, 0));
+
+    this.controls.target.copy(target);
+
+    if (force) {
+      this.camera.position.copy(target).add(offset);
+      return;
+    }
+
+    this.camera.position.lerp(target.clone().add(offset), 0.18);
+  }
+
   animate() {
     requestAnimationFrame(() => this.animate());
 
@@ -193,6 +275,7 @@ class SatelliteTrackerApp {
     this.spaceEnvironment.update(now);
     this.earth.update(now);
     this.satelliteTracker.update(now);
+    this.updateTrackingCamera();
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }

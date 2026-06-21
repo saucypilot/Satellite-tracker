@@ -385,6 +385,10 @@ export class SatelliteTracker {
     return this.selectSatellite(sat, date);
   }
 
+  getSatelliteByMesh(mesh) {
+    return this.satelliteByMesh.get(mesh) ?? null;
+  }
+
   selectSatellite(sat, date) {
     if (this.selectedSatellite) {
       this.selectedSatellite.mesh.scale.setScalar(1);

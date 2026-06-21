@@ -1,9 +1,10 @@
 export class SatelliteGroupSelector {
-  constructor({ groups, selectedGroups, groupColors, onChange }) {
+  constructor({ groups, selectedGroups, groupColors, onChange, onResetView }) {
     this.groups = groups;
     this.selectedGroups = new Set(selectedGroups);
     this.groupColors = groupColors;
     this.onChange = onChange;
+    this.onResetView = onResetView;
     this.groupLabels = new Map(groups.map((group) => [group.id, group.label]));
     this.element = this.createElement();
     this.statusElement = this.element.querySelector("[data-status]");
@@ -32,6 +33,16 @@ export class SatelliteGroupSelector {
     status.dataset.status = "";
     status.textContent = "Loading...";
 
+    const controls = document.createElement("div");
+    controls.className = "satellite-panel-controls";
+
+    const resetButton = document.createElement("button");
+    resetButton.type = "button";
+    resetButton.className = "satellite-panel-button";
+    resetButton.textContent = "Reset view";
+    resetButton.addEventListener("click", () => this.onResetView?.());
+    controls.appendChild(resetButton);
+
     const selected = document.createElement("div");
     selected.className = "selected-satellite";
     selected.dataset.selected = "";
@@ -39,6 +50,7 @@ export class SatelliteGroupSelector {
 
     panel.appendChild(list);
     panel.appendChild(status);
+    panel.appendChild(controls);
     panel.appendChild(selected);
 
     return panel;
