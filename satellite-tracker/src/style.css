@@ -124,6 +124,39 @@ canvas {
   overflow-wrap: anywhere;
 }
 
+.selected-satellite-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.selected-satellite-row span {
+  color: #a9b6c8;
+  font-weight: 600;
+}
+
+.selected-satellite-row strong {
+  text-align: right;
+}
+
+.satellite-hover-tooltip {
+  position: fixed;
+  z-index: 20;
+  max-width: min(260px, calc(100vw - 32px));
+  padding: 6px 8px;
+  color: #ffffff;
+  background: rgba(12, 16, 24, 0.92);
+  border: 1px solid rgba(102, 204, 255, 0.45);
+  border-radius: 6px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+
 .satellite-panel.is-loading {
   cursor: progress;
 }

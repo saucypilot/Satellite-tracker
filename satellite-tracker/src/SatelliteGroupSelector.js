@@ -9,8 +9,10 @@ export class SatelliteGroupSelector {
     this.element = this.createElement();
     this.statusElement = this.element.querySelector("[data-status]");
     this.selectedElement = this.element.querySelector("[data-selected]");
+    this.hoverElement = this.createHoverElement();
 
     document.body.appendChild(this.element);
+    document.body.appendChild(this.hoverElement);
   }
 
   createElement() {
@@ -109,6 +111,68 @@ export class SatelliteGroupSelector {
     }
 
     const groupLabel = this.groupLabels.get(sat.group) ?? sat.group;
-    this.selectedElement.textContent = `${sat.name} - ${groupLabel}`;
+    this.selectedElement.replaceChildren(
+      this.createDetailRow("Name", sat.name),
+      this.createDetailRow("Group", groupLabel),
+      this.createDetailRow("NORAD ID", sat.catalogId ?? "Unknown"),
+      this.createDetailRow(
+        "Inclination",
+        this.formatDegrees(sat.inclinationDegrees)
+      ),
+      this.createDetailRow(
+        "Period",
+        this.formatMinutes(sat.orbitalPeriodMinutes)
+      ),
+      this.createDetailRow("Eccentricity", this.formatNumber(sat.eccentricity))
+    );
+  }
+
+  showSatelliteHover(sat, x, y) {
+    this.hoverElement.textContent = sat.name;
+    this.hoverElement.style.left = `${x + 14}px`;
+    this.hoverElement.style.top = `${y + 14}px`;
+    this.hoverElement.hidden = false;
+  }
+
+  hideSatelliteHover() {
+    this.hoverElement.hidden = true;
+  }
+
+  createHoverElement() {
+    const hover = document.createElement("div");
+
+    hover.className = "satellite-hover-tooltip";
+    hover.hidden = true;
+    return hover;
+  }
+
+  createDetailRow(label, value) {
+    const row = document.createElement("div");
+    const labelElement = document.createElement("span");
+    const valueElement = document.createElement("strong");
+
+    row.className = "selected-satellite-row";
+    labelElement.textContent = label;
+    valueElement.textContent = value;
+    row.append(labelElement, valueElement);
+    return row;
+  }
+
+  formatDegrees(value) {
+    if (!Number.isFinite(value)) return "Unknown";
+
+    return `${value.toFixed(2)}°`;
+  }
+
+  formatMinutes(value) {
+    if (!Number.isFinite(value)) return "Unknown";
+
+    return `${value.toFixed(1)} min`;
+  }
+
+  formatNumber(value) {
+    if (!Number.isFinite(value)) return "Unknown";
+
+    return value.toFixed(5);
   }
 }

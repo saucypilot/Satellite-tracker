@@ -87,6 +87,12 @@ class SatelliteTrackerApp {
     this.renderer.domElement.addEventListener("click", (event) =>
       this.handleClick(event)
     );
+    this.renderer.domElement.addEventListener("mousemove", (event) =>
+      this.handleMouseMove(event)
+    );
+    this.renderer.domElement.addEventListener("mouseleave", () =>
+      this.groupSelector.hideSatelliteHover()
+    );
     this.renderer.domElement.addEventListener("dblclick", (event) =>
       this.handleDoubleClick(event)
     );
@@ -97,6 +103,7 @@ class SatelliteTrackerApp {
     this.groupSelector.setLoading(true);
     this.groupSelector.setStatus("Loading...");
     this.groupSelector.setSelectedSatellite(null);
+    this.groupSelector.hideSatelliteHover();
 
     try {
       const result = await this.satelliteTracker.load(groups);
@@ -143,13 +150,7 @@ class SatelliteTrackerApp {
   handleClick(event) {
     if (event.detail > 1) return;
 
-    const rect = this.renderer.domElement.getBoundingClientRect();
-
-    this.pointer.set(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
-    );
-    this.raycaster.setFromCamera(this.pointer, this.camera);
+    this.updatePointer(event);
 
     const moonIntersects = this.raycaster.intersectObject(
       this.spaceEnvironment.getMoonMesh(),
@@ -167,38 +168,27 @@ class SatelliteTrackerApp {
     this.spaceEnvironment.hideMoonOrbit();
     this.trackedSatellite = null;
 
-    const intersects = this.raycaster.intersectObjects(
-      this.satelliteTracker.getSatelliteMeshes(),
-      false
-    );
+    const sat = this.findSatelliteFromPointer(event);
 
-    if (intersects.length === 0) {
-      const nearbySatellite = this.satelliteTracker.findSatelliteNearScreenPoint(
-        event.clientX,
-        event.clientY,
-        this.camera,
-        this.renderer.domElement
-      );
-
-      if (nearbySatellite) {
-        const selected = this.satelliteTracker.selectSatellite(
-          nearbySatellite,
-          new Date()
-        );
-        this.groupSelector.setSelectedSatellite(selected);
-        return;
-      }
-
+    if (!sat) {
       this.satelliteTracker.clearSelection();
       this.groupSelector.setSelectedSatellite(null);
       return;
     }
 
-    const selected = this.satelliteTracker.selectSatelliteByMesh(
-      intersects[0].object,
-      new Date()
-    );
+    const selected = this.satelliteTracker.selectSatellite(sat, new Date());
     this.groupSelector.setSelectedSatellite(selected);
+  }
+
+  handleMouseMove(event) {
+    const sat = this.findSatelliteFromPointer(event);
+
+    if (!sat) {
+      this.groupSelector.hideSatelliteHover();
+      return;
+    }
+
+    this.groupSelector.showSatelliteHover(sat, event.clientX, event.clientY);
   }
 
   handleDoubleClick(event) {
@@ -214,13 +204,7 @@ class SatelliteTrackerApp {
   }
 
   findSatelliteFromPointer(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-
-    this.pointer.set(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
-    );
-    this.raycaster.setFromCamera(this.pointer, this.camera);
+    this.updatePointer(event);
 
     const intersects = this.raycaster.intersectObjects(
       this.satelliteTracker.getSatelliteMeshes(),
@@ -239,11 +223,22 @@ class SatelliteTrackerApp {
     );
   }
 
+  updatePointer(event) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+
+    this.pointer.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+  }
+
   resetCameraView() {
     this.trackedSatellite = null;
     this.spaceEnvironment.hideMoonOrbit();
     this.satelliteTracker.clearSelection();
     this.groupSelector.setSelectedSatellite(null);
+    this.groupSelector.hideSatelliteHover();
     this.camera.position.copy(DEFAULT_CAMERA_POSITION);
     this.controls.target.copy(DEFAULT_CAMERA_TARGET);
     this.controls.update();

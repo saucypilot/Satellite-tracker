@@ -234,7 +234,18 @@ export class SatelliteTracker {
 
         const satrec = satellite.twoline2satrec(tle1, tle2);
         const mesh = this.createSatelliteMesh(group);
-        const sat = { name, group, satrec, mesh };
+        const sat = {
+          name,
+          group,
+          catalogId,
+          satrec,
+          tle1,
+          tle2,
+          mesh,
+          orbitalPeriodMinutes: this.getOrbitalPeriodMinutes({ satrec }),
+          inclinationDegrees: THREE.MathUtils.radToDeg(satrec.inclo),
+          eccentricity: satrec.ecco,
+        };
 
         catalogIds.add(catalogId);
         this.satelliteByMesh.set(mesh, sat);
