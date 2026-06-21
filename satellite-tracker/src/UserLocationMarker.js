@@ -7,7 +7,7 @@ export class UserLocationMarker {
     this.retryTimeoutId = null;
     this.permissionStatus = null;
     this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 24, 24),
+      new THREE.BoxGeometry(0.12, 0.12, 0.12),
       new THREE.MeshBasicMaterial({ color: 0xff0000 })
     );
 

@@ -10,6 +10,7 @@ export class SatelliteGroupSelector {
     this.statusElement = this.element.querySelector("[data-status]");
     this.selectedElement = this.element.querySelector("[data-selected]");
     this.hoverElement = this.createHoverElement();
+    this.openButton = this.createOpenButton();
 
     document.body.appendChild(this.element);
     document.body.appendChild(this.hoverElement);
@@ -19,9 +20,19 @@ export class SatelliteGroupSelector {
     const panel = document.createElement("aside");
     panel.className = "satellite-panel";
 
+    const header = document.createElement("div");
+    header.className = "satellite-panel-header";
+
     const title = document.createElement("h1");
     title.textContent = "Satellite Groups";
-    panel.appendChild(title);
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "satellite-panel-close";
+    closeButton.textContent = "Close";
+    closeButton.addEventListener("click", () => this.setOpen(false));
+    header.append(title, closeButton);
+    panel.appendChild(header);
 
     const list = document.createElement("div");
     list.className = "satellite-group-list";
@@ -56,6 +67,27 @@ export class SatelliteGroupSelector {
     panel.appendChild(selected);
 
     return panel;
+  }
+
+  createOpenButton() {
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.className = "satellite-panel-open";
+    button.textContent = "Show satellite panel";
+    button.hidden = true;
+    button.addEventListener("click", () => this.setOpen(true));
+    document.body.appendChild(button);
+    return button;
+  }
+
+  setOpen(isOpen) {
+    this.element.hidden = !isOpen;
+    this.openButton.hidden = isOpen;
+
+    if (!isOpen) {
+      this.hideSatelliteHover();
+    }
   }
 
   createGroupOption(group) {
@@ -229,6 +261,11 @@ export class SatelliteGroupSelector {
         min-height: 100%;
         overflow: auto;
         background: #05070b;
+      }
+
+      body > div,
+      body > table {
+        max-width: 100%;
       }
     </style>
   </head>
