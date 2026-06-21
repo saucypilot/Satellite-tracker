@@ -34,8 +34,9 @@ const SATELLITE_GROUP_COLORS = {
   geo: 0xc084fc,
 };
 const SATELLITE_BLINK_SPEED = 0.004;
-const SATELLITE_BLINK_MIN_OPACITY = 0.55;
+const SATELLITE_BLINK_MIN_OPACITY = 0.72;
 const SATELLITE_BLINK_MAX_OPACITY = 1;
+const SATELLITE_SIZE = 0.04;
 
 export const SATELLITE_GROUP_COLOR_HEX = Object.fromEntries(
   Object.entries(SATELLITE_GROUP_COLORS).map(([group, color]) => [
@@ -344,11 +345,13 @@ export class SatelliteTracker {
 
   createSatelliteMesh(group) {
     return new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 12, 12),
+      new THREE.SphereGeometry(SATELLITE_SIZE, 16, 16),
       new THREE.MeshBasicMaterial({
         color: SATELLITE_GROUP_COLORS[group] ?? 0xffffff,
         transparent: true,
         opacity: SATELLITE_BLINK_MAX_OPACITY,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
         toneMapped: false,
       })
     );

@@ -8,6 +8,10 @@ import {
   getSubsolarPoint,
 } from "./utils/coords.js";
 
+const SUN_DISTANCE = 420;
+const SUN_SIZE = 4;
+const SUN_GLOW_SIZE = 38;
+
 export class Earth {
   constructor(renderer) {
     this.renderer = renderer;
@@ -34,6 +38,7 @@ export class Earth {
     this.sunLight.position.copy(
       this.sunPosition.copy(this.sunDirection).multiplyScalar(8)
     );
+    this.sunMesh.position.copy(this.sunDirection).multiplyScalar(SUN_DISTANCE);
   }
 
   createTextures() {
@@ -112,8 +117,64 @@ export class Earth {
   createLighting() {
     this.sunLight = new THREE.DirectionalLight(0xffffff, 2);
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+    this.sunMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(SUN_SIZE, 48, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95,
+        toneMapped: false,
+      })
+    );
+    this.sunGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.createSunGlowTexture(),
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false,
+      })
+    );
+
+    this.sunGlow.scale.setScalar(SUN_GLOW_SIZE);
+    this.sunMesh.add(this.sunGlow);
 
     this.group.add(this.sunLight);
     this.group.add(this.ambientLight);
+    this.group.add(this.sunMesh);
+  }
+
+  createSunGlowTexture() {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    const center = size / 2;
+
+    canvas.width = size;
+    canvas.height = size;
+
+    const context = canvas.getContext("2d");
+    const gradient = context.createRadialGradient(
+      center,
+      center,
+      0,
+      center,
+      center,
+      center
+    );
+
+    gradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+    gradient.addColorStop(0.12, "rgba(255, 255, 255, 0.95)");
+    gradient.addColorStop(0.32, "rgba(255, 244, 210, 0.42)");
+    gradient.addColorStop(0.62, "rgba(255, 220, 140, 0.14)");
+    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, size, size);
+
+    const texture = new THREE.CanvasTexture(canvas);
+
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
   }
 }
