@@ -2,7 +2,9 @@ import * as THREE from "three";
 import { EARTH_SIZE, geodeticToScenePosition } from "./utils/coords.js";
 
 export class UserLocationMarker {
-  constructor(scene) {
+  constructor(scene, onUpdate = null) {
+    this.onUpdate = onUpdate;
+    this.currentLocation = null;
     this.watchId = null;
     this.retryTimeoutId = null;
     this.permissionStatus = null;
@@ -100,9 +102,11 @@ export class UserLocationMarker {
   }
 
   update(lat, lon) {
+    this.currentLocation = { lat, lon };
     this.mesh.position.copy(
       geodeticToScenePosition(lat, lon, EARTH_SIZE * 1.025)
     );
     this.mesh.visible = true;
+    this.onUpdate?.(this.currentLocation);
   }
 }

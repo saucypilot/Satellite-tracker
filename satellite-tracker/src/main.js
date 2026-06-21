@@ -9,6 +9,7 @@ import {
 import { SatelliteGroupSelector } from "./SatelliteGroupSelector.js";
 import { UserLocationMarker } from "./UserLocationMarker.js";
 import { SpaceEnvironment } from "./spaceEnvironment.js";
+import { predictNextPass } from "./passPrediction.js";
 import "./style.css";
 
 const DEFAULT_SELECTED_GROUPS = ["stations"];
@@ -26,19 +27,28 @@ class SatelliteTrackerApp {
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.trackedSatellite = null;
+    this.selectedSatellite = null;
+    this.pendingGroundStationLocation = false;
     this.controls = this.createControls();
     this.earth = new Earth(this.renderer);
     this.spaceEnvironment = new SpaceEnvironment(this.renderer);
     this.satelliteTracker = new SatelliteTracker(this.scene, {
       groups: DEFAULT_SELECTED_GROUPS,
     });
-    this.userLocationMarker = new UserLocationMarker(this.scene);
     this.groupSelector = new SatelliteGroupSelector({
       groups: CELESTRAK_GROUPS,
       selectedGroups: DEFAULT_SELECTED_GROUPS,
       groupColors: SATELLITE_GROUP_COLOR_HEX,
       onChange: (groups) => this.loadSatelliteGroups(groups),
       onResetView: () => this.resetCameraView(),
+      onPredictPass: (groundStation) => this.predictSelectedSatellitePass(groundStation),
+      onUseCurrentLocation: () => this.useCurrentLocationForGroundStation(),
+    });
+    this.userLocationMarker = new UserLocationMarker(this.scene, ({ lat, lon }) => {
+      if (!this.pendingGroundStationLocation) return;
+
+      this.groupSelector.setGroundStation({ lat, lon });
+      this.pendingGroundStationLocation = false;
     });
 
     this.spaceEnvironment.addTo(this.scene);
@@ -100,6 +110,7 @@ class SatelliteTrackerApp {
 
   async loadSatelliteGroups(groups) {
     this.trackedSatellite = null;
+    this.selectedSatellite = null;
     this.groupSelector.setLoading(true);
     this.groupSelector.setStatus("Loading...");
     this.groupSelector.setSelectedSatellite(null);
@@ -161,6 +172,7 @@ class SatelliteTrackerApp {
       this.trackedSatellite = null;
       this.spaceEnvironment.showMoonOrbit();
       this.satelliteTracker.clearSelection();
+      this.selectedSatellite = null;
       this.groupSelector.setSelectedSatellite(null);
       return;
     }
@@ -172,11 +184,13 @@ class SatelliteTrackerApp {
 
     if (!sat) {
       this.satelliteTracker.clearSelection();
+      this.selectedSatellite = null;
       this.groupSelector.setSelectedSatellite(null);
       return;
     }
 
     const selected = this.satelliteTracker.selectSatellite(sat, new Date());
+    this.selectedSatellite = selected;
     this.groupSelector.setSelectedSatellite(selected);
   }
 
@@ -198,8 +212,8 @@ class SatelliteTrackerApp {
 
     this.spaceEnvironment.hideMoonOrbit();
     this.trackedSatellite = sat;
-    this.satelliteTracker.selectSatellite(sat, new Date());
-    this.groupSelector.setSelectedSatellite(sat);
+    this.selectedSatellite = this.satelliteTracker.selectSatellite(sat, new Date());
+    this.groupSelector.setSelectedSatellite(this.selectedSatellite);
     this.updateTrackingCamera(true);
   }
 
@@ -235,6 +249,7 @@ class SatelliteTrackerApp {
 
   resetCameraView() {
     this.trackedSatellite = null;
+    this.selectedSatellite = null;
     this.spaceEnvironment.hideMoonOrbit();
     this.satelliteTracker.clearSelection();
     this.groupSelector.setSelectedSatellite(null);
@@ -242,6 +257,25 @@ class SatelliteTrackerApp {
     this.camera.position.copy(DEFAULT_CAMERA_POSITION);
     this.controls.target.copy(DEFAULT_CAMERA_TARGET);
     this.controls.update();
+  }
+
+  predictSelectedSatellitePass(groundStation) {
+    if (!this.selectedSatellite) {
+      throw new Error("Select a satellite before predicting a pass.");
+    }
+
+    this.userLocationMarker.update(groundStation.lat, groundStation.lon);
+    return predictNextPass(this.selectedSatellite, groundStation);
+  }
+
+  useCurrentLocationForGroundStation() {
+    if (this.userLocationMarker.currentLocation) {
+      this.groupSelector.setGroundStation(this.userLocationMarker.currentLocation);
+      return;
+    }
+
+    this.pendingGroundStationLocation = true;
+    this.userLocationMarker.requestCurrentPosition();
   }
 
   updateTrackingCamera(force = false) {

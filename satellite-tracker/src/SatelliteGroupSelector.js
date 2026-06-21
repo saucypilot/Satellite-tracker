@@ -1,14 +1,28 @@
 export class SatelliteGroupSelector {
-  constructor({ groups, selectedGroups, groupColors, onChange, onResetView }) {
+  constructor({
+    groups,
+    selectedGroups,
+    groupColors,
+    onChange,
+    onResetView,
+    onPredictPass,
+    onUseCurrentLocation,
+  }) {
     this.groups = groups;
     this.selectedGroups = new Set(selectedGroups);
     this.groupColors = groupColors;
     this.onChange = onChange;
     this.onResetView = onResetView;
+    this.onPredictPass = onPredictPass;
+    this.onUseCurrentLocation = onUseCurrentLocation;
     this.groupLabels = new Map(groups.map((group) => [group.id, group.label]));
     this.element = this.createElement();
     this.statusElement = this.element.querySelector("[data-status]");
     this.selectedElement = this.element.querySelector("[data-selected]");
+    this.stationNameInput = this.element.querySelector("[data-station-name]");
+    this.stationLatInput = this.element.querySelector("[data-station-lat]");
+    this.stationLonInput = this.element.querySelector("[data-station-lon]");
+    this.passResultElement = this.element.querySelector("[data-pass-result]");
     this.hoverElement = this.createHoverElement();
     this.openButton = this.createOpenButton();
 
@@ -64,9 +78,75 @@ export class SatelliteGroupSelector {
     panel.appendChild(list);
     panel.appendChild(status);
     panel.appendChild(controls);
+    panel.appendChild(this.createGroundStationControls());
     panel.appendChild(selected);
 
     return panel;
+  }
+
+  createGroundStationControls() {
+    const container = document.createElement("section");
+    const title = document.createElement("h2");
+    const fields = document.createElement("div");
+    const actions = document.createElement("div");
+    const nameInput = this.createStationInput(
+      "Station name",
+      "station-name",
+      "Fort Worth"
+    );
+    const latInput = this.createStationInput("Latitude", "station-lat", "32.7555");
+    const lonInput = this.createStationInput(
+      "Longitude",
+      "station-lon",
+      "-97.3308"
+    );
+    const useCurrentButton = document.createElement("button");
+    const predictButton = document.createElement("button");
+    const result = document.createElement("div");
+
+    container.className = "ground-station-panel";
+    title.textContent = "Ground Station Pass";
+    fields.className = "ground-station-fields";
+    actions.className = "ground-station-actions";
+    useCurrentButton.type = "button";
+    useCurrentButton.className = "satellite-panel-button";
+    useCurrentButton.textContent = "Use my location";
+    useCurrentButton.addEventListener("click", () => this.onUseCurrentLocation?.());
+    predictButton.type = "button";
+    predictButton.className = "satellite-panel-button";
+    predictButton.textContent = "Predict next pass";
+    predictButton.addEventListener("click", () => this.handlePredictPass());
+    result.className = "pass-result";
+    result.dataset.passResult = "";
+    result.textContent = "Select a satellite, set a station, then predict a pass.";
+
+    fields.append(nameInput, latInput, lonInput);
+    actions.append(useCurrentButton, predictButton);
+    container.append(title, fields, actions, result);
+    return container;
+  }
+
+  createStationInput(label, field, value) {
+    const wrapper = document.createElement("label");
+    const labelText = document.createElement("span");
+    const input = document.createElement("input");
+
+    wrapper.className = "ground-station-field";
+    labelText.textContent = label;
+    input.dataset[this.dataKeyToProperty(field)] = "";
+    input.value = value;
+    input.type = field === "station-name" ? "text" : "number";
+
+    if (input.type === "number") {
+      input.step = "0.0001";
+    }
+
+    wrapper.append(labelText, input);
+    return wrapper;
+  }
+
+  dataKeyToProperty(key) {
+    return key.replace(/-([a-z])/g, (_, char) => char.toUpperCase());
   }
 
   createOpenButton() {
@@ -161,6 +241,164 @@ export class SatelliteGroupSelector {
       this.createDetailRow("Altitude", this.formatKilometers(sat.altitudeKm)),
       this.createN2yoWidget(sat)
     );
+  }
+
+  setGroundStation({ lat, lon, name = "Current location" }) {
+    if (this.stationNameInput) this.stationNameInput.value = name;
+    if (this.stationLatInput) this.stationLatInput.value = lat.toFixed(4);
+    if (this.stationLonInput) this.stationLonInput.value = lon.toFixed(4);
+  }
+
+  async handlePredictPass() {
+    const groundStation = this.getGroundStation();
+
+    if (!groundStation) {
+      this.passResultElement.textContent = "Enter a valid latitude and longitude.";
+      return;
+    }
+
+    this.passResultElement.textContent = "Calculating next pass...";
+
+    try {
+      const pass = await this.onPredictPass?.(groundStation);
+      this.setPassPrediction(pass, groundStation);
+    } catch (error) {
+      this.passResultElement.textContent = error.message;
+    }
+  }
+
+  getGroundStation() {
+    const lat = Number(this.stationLatInput.value);
+    const lon = Number(this.stationLonInput.value);
+    const name = this.stationNameInput.value.trim() || "Ground station";
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      return null;
+    }
+
+    return { name, lat, lon, heightKm: 0 };
+  }
+
+  setPassPrediction(pass, groundStation) {
+    if (!pass) {
+      this.passResultElement.textContent =
+        "No visible pass found in the next 24 hours.";
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+
+    canvas.width = 320;
+    canvas.height = 320;
+    this.passResultElement.replaceChildren(
+      this.createPassTitle(pass, groundStation),
+      this.createDetailRow("AOS", this.formatUtcTime(pass.aos)),
+      this.createDetailRow(
+        "Maximum elevation",
+        this.formatDegrees(pass.maxElevationDegrees)
+      ),
+      this.createDetailRow("Max elevation time", this.formatUtcTime(pass.maxElevationAt)),
+      this.createDetailRow("LOS", this.formatUtcTime(pass.los)),
+      this.createDetailRow("Duration", this.formatDuration(pass.durationSeconds)),
+      this.createDetailRow("Visibility", pass.visibility),
+      canvas
+    );
+    this.drawPolarSkyPlot(canvas, pass.samples);
+  }
+
+  createPassTitle(pass, groundStation) {
+    const title = document.createElement("div");
+
+    title.className = "pass-result-title";
+    title.textContent = `${pass.satelliteName} pass over ${groundStation.name}`;
+    return title;
+  }
+
+  drawPolarSkyPlot(canvas, samples) {
+    const context = canvas.getContext("2d");
+    const center = canvas.width / 2;
+    const radius = canvas.width * 0.39;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "rgba(5, 7, 11, 0.96)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    context.lineWidth = 1;
+
+    for (const ring of [1, 2 / 3, 1 / 3]) {
+      context.beginPath();
+      context.arc(center, center, radius * ring, 0, Math.PI * 2);
+      context.stroke();
+    }
+
+    context.fillStyle = "#a9b6c8";
+    context.font = "700 12px sans-serif";
+    context.textAlign = "center";
+    context.fillText("N", center, center - radius - 10);
+    context.fillText("S", center, center + radius + 18);
+    context.fillText("E", center + radius + 14, center + 4);
+    context.fillText("W", center - radius - 14, center + 4);
+    context.strokeStyle = "#66ccff";
+    context.lineWidth = 3;
+    context.beginPath();
+
+    for (const [index, sample] of samples.entries()) {
+      const point = this.getPolarPlotPoint(sample, center, radius);
+
+      if (index === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    }
+
+    context.stroke();
+    this.drawPassEndpoint(context, samples[0], center, radius, "#2eff8f");
+    this.drawPassEndpoint(
+      context,
+      samples[samples.length - 1],
+      center,
+      radius,
+      "#ff4f4f"
+    );
+  }
+
+  drawPassEndpoint(context, sample, center, radius, color) {
+    const point = this.getPolarPlotPoint(sample, center, radius);
+
+    context.fillStyle = color;
+    context.beginPath();
+    context.arc(point.x, point.y, 5, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  getPolarPlotPoint(sample, center, radius) {
+    const azimuth = (sample.azimuthDegrees * Math.PI) / 180;
+    const plotRadius =
+      ((90 - Math.max(0, sample.elevationDegrees)) / 90) * radius;
+
+    return {
+      x: center + plotRadius * Math.sin(azimuth),
+      y: center - plotRadius * Math.cos(azimuth),
+    };
+  }
+
+  formatUtcTime(date) {
+    return date.toISOString().slice(11, 19) + " UTC";
+  }
+
+  formatDuration(totalSeconds) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
   }
 
   showSatelliteHover(sat, x, y) {
