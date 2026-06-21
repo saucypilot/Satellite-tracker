@@ -18,7 +18,7 @@ canvas {
   top: 16px;
   left: 16px;
   z-index: 10;
-  width: min(280px, calc(100vw - 32px));
+  width: min(640px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   padding: 14px;
   box-sizing: border-box;
@@ -138,6 +138,59 @@ canvas {
 
 .selected-satellite-row strong {
   text-align: right;
+}
+
+.n2yo-widget {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.n2yo-widget-title {
+  margin-bottom: 8px;
+  color: #e7f5ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.n2yo-widget-note {
+  margin-bottom: 8px;
+  color: #a9b6c8;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.n2yo-widget-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.n2yo-widget iframe {
+  display: block;
+  width: 100%;
+  height: 560px;
+  background: #05070b;
+  border: 1px solid rgba(102, 204, 255, 0.28);
+  border-radius: 6px;
+}
+
+.n2yo-widget-link {
+  display: block;
+  padding: 7px 8px;
+  color: #66ccff;
+  background: rgba(102, 204, 255, 0.09);
+  border: 1px solid rgba(102, 204, 255, 0.22);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.n2yo-widget-link:hover {
+  background: rgba(102, 204, 255, 0.16);
 }
 
 .satellite-hover-tooltip {

@@ -425,6 +425,7 @@ export class SatelliteTracker {
       this.selectedSatellite.mesh.scale.setScalar(1);
     }
 
+    this.updateSatelliteScenePosition(sat, date);
     this.selectedSatellite = sat;
     sat.mesh.scale.setScalar(1.9);
     this.selectionMarker.visible = true;
@@ -490,7 +491,7 @@ export class SatelliteTracker {
   }
 
   updateSatellitePosition(sat, date) {
-    const position = this.getSatelliteScenePosition(sat, date);
+    const position = this.updateSatelliteScenePosition(sat, date);
 
     if (!position) return;
 
@@ -502,6 +503,25 @@ export class SatelliteTracker {
   }
 
   getSatelliteScenePosition(sat, date) {
+    const position = this.getSatellitePositionData(sat, date);
+
+    if (!position) return null;
+
+    return position.scenePosition;
+  }
+
+  updateSatelliteScenePosition(sat, date) {
+    const position = this.getSatellitePositionData(sat, date);
+
+    if (!position) return null;
+
+    sat.latitude = position.lat;
+    sat.longitude = position.lon;
+    sat.altitudeKm = position.alt;
+    return position.scenePosition;
+  }
+
+  getSatellitePositionData(sat, date) {
     const positionAndVelocity = satellite.propagate(sat.satrec, date);
     const positionEci = positionAndVelocity.position;
 
@@ -516,10 +536,15 @@ export class SatelliteTracker {
     const phi = THREE.MathUtils.degToRad(90 - lat);
     const theta = THREE.MathUtils.degToRad(lon + 180);
 
-    return new THREE.Vector3(
-      -radius * Math.sin(phi) * Math.cos(theta),
-      radius * Math.cos(phi),
-      radius * Math.sin(phi) * Math.sin(theta)
-    );
+    return {
+      lat,
+      lon,
+      alt,
+      scenePosition: new THREE.Vector3(
+        -radius * Math.sin(phi) * Math.cos(theta),
+        radius * Math.cos(phi),
+        radius * Math.sin(phi) * Math.sin(theta)
+      ),
+    };
   }
 }

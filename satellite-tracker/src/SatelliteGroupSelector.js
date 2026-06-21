@@ -123,7 +123,11 @@ export class SatelliteGroupSelector {
         "Period",
         this.formatMinutes(sat.orbitalPeriodMinutes)
       ),
-      this.createDetailRow("Eccentricity", this.formatNumber(sat.eccentricity))
+      this.createDetailRow("Eccentricity", this.formatNumber(sat.eccentricity)),
+      this.createDetailRow("Latitude", this.formatDegrees(sat.latitude)),
+      this.createDetailRow("Longitude", this.formatDegrees(sat.longitude)),
+      this.createDetailRow("Altitude", this.formatKilometers(sat.altitudeKm)),
+      this.createN2yoWidget(sat)
     );
   }
 
@@ -158,6 +162,94 @@ export class SatelliteGroupSelector {
     return row;
   }
 
+  createN2yoWidget(sat) {
+    const container = document.createElement("div");
+    const title = document.createElement("div");
+    const note = document.createElement("div");
+    const iframe = document.createElement("iframe");
+    const links = document.createElement("div");
+    const noradId = this.getSafeNoradId(sat.catalogId);
+
+    container.className = "n2yo-widget";
+    title.className = "n2yo-widget-title";
+    title.textContent = "N2YO tracker";
+    note.className = "n2yo-widget-note";
+    note.textContent =
+      "The embedded N2YO widget is mostly the live map. Use these links for the useful detail pages.";
+    links.className = "n2yo-widget-links";
+
+    if (!noradId) {
+      container.textContent = "N2YO tracker unavailable: missing NORAD ID.";
+      return container;
+    }
+
+    iframe.title = `N2YO tracker for ${sat.name}`;
+    iframe.loading = "lazy";
+    iframe.referrerPolicy = "no-referrer-when-downgrade";
+    iframe.sandbox = "allow-scripts allow-same-origin allow-popups";
+    iframe.allow = "geolocation";
+    iframe.srcdoc = this.createN2yoWidgetDocument(noradId);
+
+    links.append(
+      this.createN2yoLink(`https://www.n2yo.com/?s=${noradId}`, "Live tracking"),
+      this.createN2yoLink(
+        `https://www.n2yo.com/satellite/?s=${noradId}`,
+        "Satellite details"
+      ),
+      this.createN2yoLink(
+        `https://www.n2yo.com/passes/?s=${noradId}`,
+        "10-day predictions"
+      )
+    );
+    container.append(title, note, links, iframe);
+    return container;
+  }
+
+  createN2yoLink(href, text) {
+    const link = document.createElement("a");
+
+    link.className = "n2yo-widget-link";
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = text;
+    return link;
+  }
+
+  createN2yoWidgetDocument(noradId) {
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        overflow: auto;
+        background: #05070b;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      var norad_n2yo = '${noradId}';
+      var size_n2yo = 'medium';
+      var allpasses_n2yo = '1';
+      var map_n2yo = '4';
+    </script>
+    <script src="https://www.n2yo.com/js/widget-tracker.js"></script>
+  </body>
+</html>`;
+  }
+
+  getSafeNoradId(catalogId) {
+    const noradId = String(catalogId ?? "").trim();
+
+    return /^\d+$/.test(noradId) ? noradId : null;
+  }
+
   formatDegrees(value) {
     if (!Number.isFinite(value)) return "Unknown";
 
@@ -168,6 +260,12 @@ export class SatelliteGroupSelector {
     if (!Number.isFinite(value)) return "Unknown";
 
     return `${value.toFixed(1)} min`;
+  }
+
+  formatKilometers(value) {
+    if (!Number.isFinite(value)) return "Unknown";
+
+    return `${value.toFixed(1)} km`;
   }
 
   formatNumber(value) {
