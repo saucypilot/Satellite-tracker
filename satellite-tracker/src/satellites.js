@@ -4,6 +4,9 @@ import { EARTH_RADIUS, SCALE } from "./utils/coords.js";
 
 const CELESTRAK_TLE_BASE_URL =
   "https://celestrak.org/NORAD/elements/gp.php?FORMAT=tle";
+const TLE_CACHE_NAME = "satellite-tracker-tle-v1";
+const TLE_CACHE_KEY_PREFIX = "satellite-tracker:tle:";
+const TLE_CACHE_VERSION = 1;
 
 export const CELESTRAK_GROUPS = [
   { id: "stations", label: "ISS & space stations" },
@@ -38,6 +41,121 @@ export const SATELLITE_GROUP_COLOR_HEX = Object.fromEntries(
   ])
 );
 
+class CelesTrakLoadError extends Error {
+  constructor(group, message, { status = null } = {}) {
+    super(message);
+    this.name = "CelesTrakLoadError";
+    this.group = group;
+    this.status = status;
+  }
+}
+
+function getTleCacheKey(group) {
+  return `${TLE_CACHE_KEY_PREFIX}${TLE_CACHE_VERSION}:${group}`;
+}
+
+function getTleCacheRequest(group) {
+  return `/tle-cache/${TLE_CACHE_VERSION}/${encodeURIComponent(group)}`;
+}
+
+async function readCachedTle(group) {
+  const cacheApiEntry = await readCacheApiTle(group);
+
+  if (cacheApiEntry) return cacheApiEntry;
+
+  try {
+    const raw = globalThis.localStorage?.getItem(getTleCacheKey(group));
+
+    if (!raw) return null;
+
+    const cached = JSON.parse(raw);
+
+    if (!cached?.text || !hasTleData(cached.text)) return null;
+
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+async function readCacheApiTle(group) {
+  try {
+    const cache = await globalThis.caches?.open(TLE_CACHE_NAME);
+    const res = await cache?.match(getTleCacheRequest(group));
+
+    if (!res) return null;
+
+    const text = await res.text();
+
+    if (!hasTleData(text)) return null;
+
+    return {
+      text,
+      fetchedAt: Number(res.headers.get("x-fetched-at")) || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedTle(group, text) {
+  const fetchedAt = Date.now();
+
+  try {
+    const cache = await globalThis.caches?.open(TLE_CACHE_NAME);
+
+    if (cache) {
+      await cache.put(
+        getTleCacheRequest(group),
+        new Response(text, {
+          headers: {
+            "content-type": "text/plain",
+            "x-fetched-at": String(fetchedAt),
+          },
+        })
+      );
+      return;
+    }
+  } catch {
+  }
+
+  try {
+    globalThis.localStorage?.setItem(
+      getTleCacheKey(group),
+      JSON.stringify({
+        fetchedAt,
+        text,
+      })
+    );
+  } catch {
+  }
+}
+
+function hasTleData(text) {
+  const lines = text.trim().split("\n");
+
+  for (let i = 0; i < lines.length - 2; i += 3) {
+    if (lines[i + 1]?.startsWith("1 ") && lines[i + 2]?.startsWith("2 ")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function formatCacheAge(timestamp) {
+  if (!timestamp) return "unknown age";
+
+  const ageHours = Math.max(0, Math.round((Date.now() - timestamp) / 3600000));
+
+  if (ageHours < 1) return "less than 1 hour old";
+  if (ageHours === 1) return "1 hour old";
+  if (ageHours < 48) return `${ageHours} hours old`;
+
+  const ageDays = Math.round(ageHours / 24);
+  return ageDays === 1 ? "1 day old" : `${ageDays} days old`;
+}
+
 export class SatelliteTracker {
   constructor(
     scene,
@@ -68,21 +186,36 @@ export class SatelliteTracker {
     const results = await Promise.allSettled(
       groups.map((group) => this.fetchGroup(group))
     );
+    const failedGroups = results
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason?.group)
+      .filter(Boolean);
     const tleGroups = results
       .filter((result) => result.status === "fulfilled")
       .map((result) => result.value);
 
     if (loadId !== this.loadId) {
-      return this.satellites.length;
+      return {
+        count: this.satellites.length,
+        cachedGroups: [],
+        failedGroups: [],
+        limitedByMax: false,
+      };
     }
 
     if (tleGroups.length === 0) {
-      const failedGroups = groups.join(", ");
-      throw new Error(`No CelesTrak groups loaded: ${failedGroups}`);
+      const failedGroupList = groups.join(", ");
+      throw new Error(`No CelesTrak groups loaded: ${failedGroupList}`);
     }
 
     const satellites = [];
     const catalogIds = new Set();
+    const cachedGroups = tleGroups
+      .filter((tleGroup) => tleGroup.source === "cache")
+      .map((tleGroup) => ({
+        group: tleGroup.group,
+        age: formatCacheAge(tleGroup.fetchedAt),
+      }));
 
     for (const { group, text } of tleGroups) {
       const lines = text.trim().split("\n");
@@ -111,18 +244,65 @@ export class SatelliteTracker {
     }
 
     this.satellites = satellites;
-    return satellites.length;
+    return {
+      count: satellites.length,
+      cachedGroups,
+      failedGroups,
+      limitedByMax: satellites.length === this.maxSatellites,
+    };
   }
 
   async fetchGroup(group) {
     const url = `${CELESTRAK_TLE_BASE_URL}&GROUP=${encodeURIComponent(group)}`;
-    const res = await fetch(url);
 
-    if (!res.ok) {
-      throw new Error(`Failed to load CelesTrak group "${group}"`);
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+
+      if (!res.ok) {
+        throw new CelesTrakLoadError(
+          group,
+          `CelesTrak returned HTTP ${res.status} for "${group}"`,
+          { status: res.status }
+        );
+      }
+
+      if (!hasTleData(text)) {
+        throw new CelesTrakLoadError(
+          group,
+          `CelesTrak returned no TLE data for "${group}"`,
+          { status: res.status }
+        );
+      }
+
+      await writeCachedTle(group, text);
+      return { group, text, source: "network", fetchedAt: Date.now() };
+    } catch (error) {
+      const cached = await readCachedTle(group);
+
+      if (cached) {
+        console.warn(
+          `Using cached CelesTrak data for "${group}" because the live request failed.`,
+          error
+        );
+        return {
+          group,
+          text: cached.text,
+          source: "cache",
+          fetchedAt: cached.fetchedAt,
+        };
+      }
+
+      if (error instanceof CelesTrakLoadError) {
+        throw error;
+      }
+
+      throw new CelesTrakLoadError(
+        group,
+        `Failed to load CelesTrak group "${group}"`,
+        { status: error?.status ?? null }
+      );
     }
-
-    return { group, text: await res.text() };
   }
 
   clearSatellites() {

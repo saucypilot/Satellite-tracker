@@ -85,14 +85,39 @@ class SatelliteTrackerApp {
     this.groupSelector.setSelectedSatellite(null);
 
     try {
-      const count = await this.satelliteTracker.load(groups);
-      this.groupSelector.setStatus(`${count} satellites`);
+      const result = await this.satelliteTracker.load(groups);
+      this.groupSelector.setStatus(this.createLoadStatus(result));
     } catch (error) {
       console.error("Unable to load satellite data:", error);
-      this.groupSelector.setStatus("Unable to load satellites");
+      this.groupSelector.setStatus(
+        `${error.message}. Try again after CelesTrak updates.`
+      );
     } finally {
       this.groupSelector.setLoading(false);
     }
+  }
+
+  createLoadStatus({ count, cachedGroups, failedGroups, limitedByMax }) {
+    const details = [];
+
+    if (limitedByMax) {
+      details.push("display limit reached");
+    }
+
+    if (cachedGroups.length > 0) {
+      const cachedSummary = cachedGroups
+        .map(({ group, age }) => `${group} cache ${age}`)
+        .join(", ");
+      details.push(`using ${cachedSummary}`);
+    }
+
+    if (failedGroups.length > 0) {
+      details.push(`failed: ${failedGroups.join(", ")}`);
+    }
+
+    return details.length > 0
+      ? `${count} satellites (${details.join("; ")})`
+      : `${count} satellites`;
   }
 
   resize() {
