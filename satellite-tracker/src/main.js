@@ -12,7 +12,7 @@ import { SpaceEnvironment } from "./spaceEnvironment.js";
 import { predictNextPass } from "./passPrediction.js";
 import "./style.css";
 
-const DEFAULT_SELECTED_GROUPS = ["stations"];
+const DEFAULT_SELECTED_GROUPS = ["active"];
 const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 20, 8);
 const DEFAULT_CAMERA_TARGET = new THREE.Vector3(0, 0, 0);
 const TRACKING_CAMERA_DISTANCE = 1.2;
