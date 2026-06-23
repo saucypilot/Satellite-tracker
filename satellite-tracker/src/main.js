@@ -17,6 +17,8 @@ const DEFAULT_CAMERA_POSITION = new THREE.Vector3(0, 20, 8);
 const DEFAULT_CAMERA_TARGET = new THREE.Vector3(0, 0, 0);
 const TRACKING_CAMERA_DISTANCE = 1.2;
 const TRACKING_CAMERA_LIFT = 0.35;
+const HISTORY_LOOKBACK_HOURS = 48;
+const TIMELINE_STEP_MS = 60 * 60 * 1000;
 
 class SatelliteTrackerApp {
   constructor(container = document.body) {
@@ -29,6 +31,8 @@ class SatelliteTrackerApp {
     this.trackedSatellite = null;
     this.selectedSatellite = null;
     this.pendingGroundStationLocation = false;
+    this.timeline = this.createTimelineState();
+    this.previousTimelineFrame = performance.now();
     this.controls = this.createControls();
     this.earth = new Earth(this.renderer);
     this.spaceEnvironment = new SpaceEnvironment(this.renderer);
@@ -43,6 +47,11 @@ class SatelliteTrackerApp {
       onResetView: () => this.resetCameraView(),
       onPredictPass: (groundStation) => this.predictSelectedSatellitePass(groundStation),
       onUseCurrentLocation: () => this.useCurrentLocationForGroundStation(),
+      onTimelineModeChange: (mode) => this.setTimelineMode(mode),
+      onTimelineTimeChange: (value) => this.setTimelineTimeFromValue(value),
+      onTimelinePlaybackChange: (isPlaying) => this.setTimelinePlayback(isPlaying),
+      onTimelineSpeedChange: (speed) => this.setTimelineSpeed(speed),
+      onTimelineStep: (direction) => this.stepTimeline(direction),
     });
     this.userLocationMarker = new UserLocationMarker(this.scene, ({ lat, lon }) => {
       if (!this.pendingGroundStationLocation) return;
@@ -54,6 +63,7 @@ class SatelliteTrackerApp {
     this.spaceEnvironment.addTo(this.scene);
     this.earth.addTo(this.scene);
     this.userLocationMarker.startTracking();
+    this.groupSelector.setTimelineState(this.timeline);
     this.loadSatelliteGroups(DEFAULT_SELECTED_GROUPS);
     this.bindEvents();
   }
@@ -90,6 +100,22 @@ class SatelliteTrackerApp {
     controls.enableDamping = true;
     controls.target.copy(DEFAULT_CAMERA_TARGET);
     return controls;
+  }
+
+  createTimelineState() {
+    const endTime = new Date();
+    const startTime = new Date(
+      endTime.getTime() - HISTORY_LOOKBACK_HOURS * 60 * 60 * 1000
+    );
+
+    return {
+      mode: "live",
+      currentTime: endTime,
+      startTime,
+      endTime,
+      playbackSpeed: 60,
+      isPlaying: false,
+    };
   }
 
   bindEvents() {
@@ -152,6 +178,127 @@ class SatelliteTrackerApp {
       : `${count} satellites`;
   }
 
+  setTimelineMode(mode) {
+    if (mode === this.timeline.mode) return;
+
+    if (mode === "history") {
+      const endTime = new Date();
+      const startTime = new Date(
+        endTime.getTime() - HISTORY_LOOKBACK_HOURS * 60 * 60 * 1000
+      );
+
+      this.timeline = {
+        ...this.timeline,
+        mode,
+        startTime,
+        endTime,
+        currentTime: endTime,
+        isPlaying: false,
+      };
+      this.updateHistoryTrail();
+    } else {
+      this.timeline = {
+        ...this.timeline,
+        mode: "live",
+        currentTime: new Date(),
+        isPlaying: false,
+      };
+      this.satelliteTracker.clearHistoryTrail();
+    }
+
+    this.refreshSelectedSatellite();
+    this.groupSelector.setTimelineState(this.timeline);
+  }
+
+  setTimelineTimeFromValue(value) {
+    if (this.timeline.mode !== "history") return;
+
+    const startMs = this.timeline.startTime.getTime();
+    const endMs = this.timeline.endTime.getTime();
+    const nextTime = new Date(startMs + (endMs - startMs) * value);
+
+    this.timeline = {
+      ...this.timeline,
+      currentTime: nextTime,
+      isPlaying: false,
+    };
+    this.refreshSelectedSatellite();
+    this.groupSelector.setTimelineState(this.timeline);
+  }
+
+  setTimelinePlayback(isPlaying) {
+    if (this.timeline.mode !== "history") return;
+
+    this.previousTimelineFrame = performance.now();
+    this.timeline = {
+      ...this.timeline,
+      isPlaying,
+    };
+    this.groupSelector.setTimelineState(this.timeline);
+  }
+
+  setTimelineSpeed(speed) {
+    this.timeline = {
+      ...this.timeline,
+      playbackSpeed: Number.isFinite(speed) ? speed : 60,
+    };
+    this.groupSelector.setTimelineState(this.timeline);
+  }
+
+  stepTimeline(direction) {
+    if (this.timeline.mode !== "history") return;
+
+    const nextTime = new Date(
+      this.timeline.currentTime.getTime() + direction * TIMELINE_STEP_MS
+    );
+
+    this.timeline = {
+      ...this.timeline,
+      currentTime: this.clampTimelineTime(nextTime),
+      isPlaying: false,
+    };
+    this.refreshSelectedSatellite();
+    this.groupSelector.setTimelineState(this.timeline);
+  }
+
+  clampTimelineTime(date) {
+    const timestamp = Math.min(
+      this.timeline.endTime.getTime(),
+      Math.max(this.timeline.startTime.getTime(), date.getTime())
+    );
+
+    return new Date(timestamp);
+  }
+
+  getDisplayDate(now = new Date()) {
+    return this.timeline.mode === "history" ? this.timeline.currentTime : now;
+  }
+
+  updateTimelinePlayback() {
+    const frameTime = performance.now();
+
+    if (this.timeline.mode !== "history" || !this.timeline.isPlaying) {
+      this.previousTimelineFrame = frameTime;
+      return;
+    }
+
+    const elapsedMs = frameTime - this.previousTimelineFrame;
+    this.previousTimelineFrame = frameTime;
+
+    const nextTime = new Date(
+      this.timeline.currentTime.getTime() + elapsedMs * this.timeline.playbackSpeed
+    );
+    const clampedTime = this.clampTimelineTime(nextTime);
+    const reachedEnd = clampedTime.getTime() >= this.timeline.endTime.getTime();
+
+    this.timeline = {
+      ...this.timeline,
+      currentTime: clampedTime,
+      isPlaying: !reachedEnd,
+    };
+    this.groupSelector.setTimelineState(this.timeline);
+  }
+
   resize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -189,9 +336,10 @@ class SatelliteTrackerApp {
       return;
     }
 
-    const selected = this.satelliteTracker.selectSatellite(sat, new Date());
+    const selected = this.satelliteTracker.selectSatellite(sat, this.getDisplayDate());
     this.selectedSatellite = selected;
     this.groupSelector.setSelectedSatellite(selected);
+    this.updateHistoryTrail();
   }
 
   handleMouseMove(event) {
@@ -212,8 +360,12 @@ class SatelliteTrackerApp {
 
     this.spaceEnvironment.hideMoonOrbit();
     this.trackedSatellite = sat;
-    this.selectedSatellite = this.satelliteTracker.selectSatellite(sat, new Date());
+    this.selectedSatellite = this.satelliteTracker.selectSatellite(
+      sat,
+      this.getDisplayDate()
+    );
     this.groupSelector.setSelectedSatellite(this.selectedSatellite);
+    this.updateHistoryTrail();
     this.updateTrackingCamera(true);
   }
 
@@ -254,6 +406,7 @@ class SatelliteTrackerApp {
     this.satelliteTracker.clearSelection();
     this.groupSelector.setSelectedSatellite(null);
     this.groupSelector.hideSatelliteHover();
+    this.satelliteTracker.clearHistoryTrail();
     this.camera.position.copy(DEFAULT_CAMERA_POSITION);
     this.controls.target.copy(DEFAULT_CAMERA_TARGET);
     this.controls.update();
@@ -276,6 +429,33 @@ class SatelliteTrackerApp {
 
     this.pendingGroundStationLocation = true;
     this.userLocationMarker.requestCurrentPosition();
+  }
+
+  refreshSelectedSatellite(redrawTrail = false) {
+    if (!this.selectedSatellite) return;
+
+    this.selectedSatellite = this.satelliteTracker.selectSatellite(
+      this.selectedSatellite,
+      this.getDisplayDate()
+    );
+    this.groupSelector.setSelectedSatellite(this.selectedSatellite);
+
+    if (redrawTrail) {
+      this.updateHistoryTrail();
+    }
+  }
+
+  updateHistoryTrail() {
+    if (this.timeline.mode !== "history" || !this.selectedSatellite) {
+      this.satelliteTracker.clearHistoryTrail();
+      return;
+    }
+
+    this.satelliteTracker.drawHistoryTrail(
+      this.selectedSatellite,
+      this.timeline.startTime,
+      this.timeline.endTime
+    );
   }
 
   updateTrackingCamera(force = false) {
@@ -301,9 +481,33 @@ class SatelliteTrackerApp {
     requestAnimationFrame(() => this.animate());
 
     const now = new Date();
-    this.spaceEnvironment.update(now);
-    this.earth.update(now);
-    this.satelliteTracker.update(now);
+    this.updateTimelinePlayback();
+
+    if (this.timeline.mode === "live") {
+      const endTime = now;
+      const startTime = new Date(
+        endTime.getTime() - HISTORY_LOOKBACK_HOURS * 60 * 60 * 1000
+      );
+
+      this.timeline = {
+        ...this.timeline,
+        currentTime: endTime,
+        startTime,
+        endTime,
+      };
+      this.groupSelector.setTimelineState(this.timeline);
+    }
+
+    const displayDate = this.getDisplayDate(now);
+
+    this.spaceEnvironment.update(displayDate);
+    this.earth.update(displayDate);
+    this.satelliteTracker.update(displayDate);
+
+    if (this.selectedSatellite) {
+      this.groupSelector.updateSelectedSatellitePosition(this.selectedSatellite);
+    }
+
     this.updateTrackingCamera();
     this.controls.update();
     this.renderer.render(this.scene, this.camera);

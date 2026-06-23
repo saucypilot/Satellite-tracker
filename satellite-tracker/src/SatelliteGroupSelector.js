@@ -9,6 +9,11 @@ export class SatelliteGroupSelector {
     onResetView,
     onPredictPass,
     onUseCurrentLocation,
+    onTimelineModeChange,
+    onTimelineTimeChange,
+    onTimelinePlaybackChange,
+    onTimelineSpeedChange,
+    onTimelineStep,
   }) {
     this.groups = groups;
     this.selectedGroups = new Set(selectedGroups);
@@ -17,8 +22,14 @@ export class SatelliteGroupSelector {
     this.onResetView = onResetView;
     this.onPredictPass = onPredictPass;
     this.onUseCurrentLocation = onUseCurrentLocation;
+    this.onTimelineModeChange = onTimelineModeChange;
+    this.onTimelineTimeChange = onTimelineTimeChange;
+    this.onTimelinePlaybackChange = onTimelinePlaybackChange;
+    this.onTimelineSpeedChange = onTimelineSpeedChange;
+    this.onTimelineStep = onTimelineStep;
     this.groupLabels = new Map(groups.map((group) => [group.id, group.label]));
     this.element = this.createElement();
+    this.timelineElement = this.createTimelineControls();
     this.statusElement = this.element.querySelector("[data-status]");
     this.selectedElement = this.element.querySelector("[data-selected]");
     this.stationNameInput = this.element.querySelector("[data-station-name]");
@@ -32,12 +43,29 @@ export class SatelliteGroupSelector {
     this.panelWidthInput = this.element.querySelector("[data-panel-width]");
     this.panelOpacityInput = this.element.querySelector("[data-panel-opacity]");
     this.panelDensitySelect = this.element.querySelector("[data-panel-density]");
+    this.timelineModeButtons =
+      this.timelineElement.querySelectorAll("[data-timeline-mode]");
+    this.timelineRangeInput =
+      this.timelineElement.querySelector("[data-timeline-range]");
+    this.timelineTimeElement =
+      this.timelineElement.querySelector("[data-timeline-time]");
+    this.timelineStartElement =
+      this.timelineElement.querySelector("[data-timeline-start]");
+    this.timelineEndElement =
+      this.timelineElement.querySelector("[data-timeline-end]");
+    this.timelinePlayButton =
+      this.timelineElement.querySelector("[data-timeline-play]");
+    this.timelineSpeedSelect =
+      this.timelineElement.querySelector("[data-timeline-speed]");
+    this.timelineNoteElement =
+      this.timelineElement.querySelector("[data-timeline-note]");
     this.hoverElement = this.createHoverElement();
     this.openButton = this.createOpenButton();
     this.restorePanelPreferences();
     this.bindResponsiveWidth();
 
     document.body.appendChild(this.element);
+    document.body.appendChild(this.timelineElement);
     document.body.appendChild(this.hoverElement);
   }
 
@@ -70,11 +98,17 @@ export class SatelliteGroupSelector {
 
     closeButton.type = "button";
     closeButton.className = "satellite-panel-close";
-    closeButton.textContent = "Close";
-    closeButton.addEventListener("click", () => this.setOpen(false));
+    closeButton.textContent = "Hide";
+    closeButton.setAttribute("aria-expanded", "true");
+    closeButton.addEventListener("click", () =>
+      this.toggleSatellitePanel(panel, closeButton)
+    );
     headerActions.append(settingsButton, closeButton);
     header.append(title, headerActions);
     panel.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "satellite-panel-body";
 
     const list = document.createElement("div");
     list.className = "satellite-group-list";
@@ -103,15 +137,28 @@ export class SatelliteGroupSelector {
     selected.dataset.selected = "";
     selected.textContent = "No satellite selected";
 
-    panel.appendChild(list);
-    panel.appendChild(status);
-    panel.appendChild(controls);
-    panel.appendChild(this.createPanelCustomizationControls());
-    panel.appendChild(this.createGroundStationControls());
-    panel.appendChild(selected);
+    body.appendChild(list);
+    body.appendChild(status);
+    body.appendChild(controls);
+    body.appendChild(this.createPanelCustomizationControls());
+    body.appendChild(this.createGroundStationControls());
+    body.appendChild(selected);
+    panel.appendChild(body);
     panel.appendChild(this.createResizeHandle());
 
     return panel;
+  }
+
+  toggleSatellitePanel(panel, button) {
+    const isCollapsed = !panel.classList.contains("is-collapsed");
+
+    panel.classList.toggle("is-collapsed", isCollapsed);
+    button.textContent = isCollapsed ? "Show" : "Hide";
+    button.setAttribute("aria-expanded", String(!isCollapsed));
+
+    if (isCollapsed) {
+      this.hideSatelliteHover();
+    }
   }
 
   createResizeHandle() {
@@ -215,6 +262,117 @@ export class SatelliteGroupSelector {
 
     container.append(title, widthControl, opacityControl, densityControl);
     return container;
+  }
+
+  createTimelineControls() {
+    const container = document.createElement("aside");
+    const header = document.createElement("div");
+    const title = document.createElement("h2");
+    const body = document.createElement("div");
+    const modeControls = document.createElement("div");
+    const liveButton = this.createTimelineModeButton("live", "Live");
+    const historyButton = this.createTimelineModeButton("history", "History");
+    const collapseButton = document.createElement("button");
+    const timeElement = document.createElement("div");
+    const range = document.createElement("input");
+    const rangeLabels = document.createElement("div");
+    const startLabel = document.createElement("span");
+    const endLabel = document.createElement("span");
+    const playback = document.createElement("div");
+    const backButton = document.createElement("button");
+    const playButton = document.createElement("button");
+    const forwardButton = document.createElement("button");
+    const speedSelect = document.createElement("select");
+    const note = document.createElement("div");
+
+    container.className = "timeline-panel";
+    container.setAttribute("aria-label", "Satellite history timeline");
+    header.className = "timeline-panel-header";
+    body.className = "timeline-panel-body";
+    title.textContent = "History Timeline";
+    modeControls.className = "timeline-mode-controls";
+    modeControls.append(liveButton, historyButton);
+    collapseButton.type = "button";
+    collapseButton.className = "timeline-collapse-button";
+    collapseButton.textContent = "Hide";
+    collapseButton.setAttribute("aria-expanded", "true");
+    collapseButton.addEventListener("click", () =>
+      this.toggleTimelinePanel(container, collapseButton)
+    );
+    header.append(title, modeControls, collapseButton);
+
+    timeElement.className = "timeline-current-time";
+    timeElement.dataset.timelineTime = "";
+    range.type = "range";
+    range.min = "0";
+    range.max = "1000";
+    range.step = "1";
+    range.value = "1000";
+    range.dataset.timelineRange = "";
+    range.addEventListener("input", () => {
+      const value = Number(range.value) / 1000;
+
+      this.onTimelineTimeChange?.(value);
+    });
+
+    rangeLabels.className = "timeline-range-labels";
+    startLabel.dataset.timelineStart = "";
+    endLabel.dataset.timelineEnd = "";
+    rangeLabels.append(startLabel, endLabel);
+
+    playback.className = "timeline-playback";
+    backButton.type = "button";
+    backButton.className = "timeline-control-button";
+    backButton.textContent = "-1h";
+    backButton.addEventListener("click", () => this.onTimelineStep?.(-1));
+    playButton.type = "button";
+    playButton.className = "timeline-control-button timeline-play-button";
+    playButton.dataset.timelinePlay = "";
+    playButton.textContent = "Play";
+    playButton.addEventListener("click", () =>
+      this.onTimelinePlaybackChange?.(playButton.textContent !== "Pause")
+    );
+    forwardButton.type = "button";
+    forwardButton.className = "timeline-control-button";
+    forwardButton.textContent = "+1h";
+    forwardButton.addEventListener("click", () => this.onTimelineStep?.(1));
+    speedSelect.className = "timeline-speed-select";
+    speedSelect.dataset.timelineSpeed = "";
+    for (const speed of [1, 10, 60, 600]) {
+      speedSelect.appendChild(this.createOption(String(speed), `${speed}x`));
+    }
+    speedSelect.value = "60";
+    speedSelect.addEventListener("change", () =>
+      this.onTimelineSpeedChange?.(Number(speedSelect.value))
+    );
+    playback.append(backButton, playButton, forwardButton, speedSelect);
+
+    note.className = "timeline-note";
+    note.dataset.timelineNote = "";
+    note.textContent = "Estimated reconstructed orbit using current CelesTrak data.";
+
+    body.append(timeElement, range, rangeLabels, playback, note);
+    container.append(header, body);
+    return container;
+  }
+
+  toggleTimelinePanel(container, button) {
+    const isCollapsed = !container.classList.contains("is-collapsed");
+
+    container.classList.toggle("is-collapsed", isCollapsed);
+    button.textContent = isCollapsed ? "Show" : "Hide";
+    button.setAttribute("aria-expanded", String(!isCollapsed));
+  }
+
+  createTimelineModeButton(mode, text) {
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.className = "timeline-mode-button";
+    button.dataset.timelineMode = mode;
+    button.textContent = text;
+    button.addEventListener("click", () => this.onTimelineModeChange?.(mode));
+    return button;
   }
 
   togglePanelSettings(forceOpen = null) {
@@ -330,6 +488,10 @@ export class SatelliteGroupSelector {
     const nextOpacity = Math.min(1, Math.max(0.2, opacity));
 
     this.element.style.setProperty("--satellite-panel-opacity", String(nextOpacity));
+    this.timelineElement?.style.setProperty(
+      "--satellite-panel-opacity",
+      String(nextOpacity)
+    );
 
     if (this.panelOpacityInput) {
       this.panelOpacityInput.value = String(Math.round(nextOpacity * 100));
@@ -486,6 +648,56 @@ export class SatelliteGroupSelector {
     this.statusElement.textContent = text;
   }
 
+  setTimelineState(timeline) {
+    const duration = timeline.endTime.getTime() - timeline.startTime.getTime();
+    const elapsed = timeline.currentTime.getTime() - timeline.startTime.getTime();
+    const value = duration > 0 ? Math.round((elapsed / duration) * 1000) : 1000;
+
+    for (const button of this.timelineModeButtons) {
+      const isActive = button.dataset.timelineMode === timeline.mode;
+
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    }
+
+    if (this.timelineRangeInput) {
+      this.timelineRangeInput.value = String(Math.min(1000, Math.max(0, value)));
+      this.timelineRangeInput.disabled = timeline.mode !== "history";
+    }
+
+    if (this.timelineTimeElement) {
+      this.timelineTimeElement.textContent = this.formatTimelineDate(
+        timeline.currentTime
+      );
+    }
+
+    if (this.timelineStartElement) {
+      this.timelineStartElement.textContent = this.formatTimelineDate(
+        timeline.startTime
+      );
+    }
+
+    if (this.timelineEndElement) {
+      this.timelineEndElement.textContent = this.formatTimelineDate(
+        timeline.endTime
+      );
+    }
+
+    if (this.timelinePlayButton) {
+      this.timelinePlayButton.textContent = timeline.isPlaying ? "Pause" : "Play";
+      this.timelinePlayButton.disabled = timeline.mode !== "history";
+    }
+
+    if (this.timelineSpeedSelect) {
+      this.timelineSpeedSelect.value = String(timeline.playbackSpeed);
+      this.timelineSpeedSelect.disabled = timeline.mode !== "history";
+    }
+
+    if (this.timelineNoteElement) {
+      this.timelineNoteElement.hidden = timeline.mode !== "history";
+    }
+  }
+
   setSelectedSatellite(sat) {
     if (!sat) {
       this.selectedElement.textContent = "No satellite selected";
@@ -511,6 +723,25 @@ export class SatelliteGroupSelector {
       this.createDetailRow("Altitude", this.formatKilometers(sat.altitudeKm)),
       this.createN2yoWidget(sat)
     );
+  }
+
+  updateSelectedSatellitePosition(sat) {
+    if (!sat) return;
+
+    this.updateDetailValue("Latitude", this.formatDegrees(sat.latitude));
+    this.updateDetailValue("Longitude", this.formatDegrees(sat.longitude));
+    this.updateDetailValue("Altitude", this.formatKilometers(sat.altitudeKm));
+  }
+
+  updateDetailValue(label, value) {
+    const row = this.selectedElement.querySelector(
+      `[data-detail-label="${CSS.escape(label)}"]`
+    );
+    const valueElement = row?.querySelector("strong");
+
+    if (valueElement) {
+      valueElement.textContent = value;
+    }
   }
 
   setGroundStation({ lat, lon, name = "Current location" }) {
@@ -664,6 +895,15 @@ export class SatelliteGroupSelector {
     return date.toISOString().slice(11, 19) + " UTC";
   }
 
+  formatTimelineDate(date) {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+
   formatDuration(totalSeconds) {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -696,6 +936,7 @@ export class SatelliteGroupSelector {
     const valueElement = document.createElement("strong");
 
     row.className = "selected-satellite-row";
+    row.dataset.detailLabel = label;
     labelElement.textContent = label;
     valueElement.textContent = value;
     row.append(labelElement, valueElement);

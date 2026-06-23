@@ -31,6 +31,7 @@ export class SatelliteTracker {
     this.selectedSatellite = null;
     this.selectionMarker = this.createSelectionMarker();
     this.trajectoryLine = null;
+    this.historyTrailLine = null;
     this.loadId = 0;
     this.scene.add(this.selectionMarker);
   }
@@ -379,6 +380,48 @@ export class SatelliteTracker {
     this.trajectoryLine = null;
   }
 
+  drawHistoryTrail(sat, startDate, endDate, intervalMinutes = 10) {
+    this.clearHistoryTrail();
+
+    if (!sat || !startDate || !endDate) return;
+
+    const points = [];
+    const intervalMs = intervalMinutes * 60000;
+
+    for (
+      let time = startDate.getTime();
+      time <= endDate.getTime();
+      time += intervalMs
+    ) {
+      const position = this.getSatelliteScenePosition(sat, new Date(time));
+
+      if (position) {
+        points.push(position);
+      }
+    }
+
+    if (points.length < 2) return;
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({
+      color: SATELLITE_GROUP_COLORS[sat.group] ?? 0x66ccff,
+      transparent: true,
+      opacity: 0.46,
+    });
+
+    this.historyTrailLine = new THREE.Line(geometry, material);
+    this.scene.add(this.historyTrailLine);
+  }
+
+  clearHistoryTrail() {
+    if (!this.historyTrailLine) return;
+
+    this.scene.remove(this.historyTrailLine);
+    this.historyTrailLine.geometry.dispose();
+    this.historyTrailLine.material.dispose();
+    this.historyTrailLine = null;
+  }
+
   clearSelection() {
     if (this.selectedSatellite) {
       this.selectedSatellite.mesh.scale.setScalar(1);
@@ -387,6 +430,7 @@ export class SatelliteTracker {
     this.selectedSatellite = null;
     this.selectionMarker.visible = false;
     this.clearTrajectory();
+    this.clearHistoryTrail();
   }
 
   getOrbitalPeriodMinutes(sat) {
