@@ -1,5 +1,9 @@
 import * as THREE from "three";
-import * as satellite from "satellite.js";
+import { gstime, propagate } from "../node_modules/satellite.js/dist/propagation.js";
+import {
+  ecfToLookAngles,
+  eciToEcf,
+} from "../node_modules/satellite.js/dist/transforms.js";
 import { EARTH_RADIUS, getSubsolarPoint } from "./utils/coords.js";
 
 const DEFAULT_LOOKAHEAD_HOURS = 24;
@@ -153,14 +157,14 @@ function refineHorizonCrossing(sat, observerGd, startDate, endDate, rising) {
 }
 
 function getLookAngles(sat, observerGd, date) {
-  const positionAndVelocity = satellite.propagate(sat.satrec, date);
+  const positionAndVelocity = propagate(sat.satrec, date);
   const positionEci = positionAndVelocity.position;
 
   if (!positionEci) return null;
 
-  const gmst = satellite.gstime(date);
-  const positionEcf = satellite.eciToEcf(positionEci, gmst);
-  const lookAngles = satellite.ecfToLookAngles(observerGd, positionEcf);
+  const gmst = gstime(date);
+  const positionEcf = eciToEcf(positionEci, gmst);
+  const lookAngles = ecfToLookAngles(observerGd, positionEcf);
 
   return {
     azimuthDegrees: normalizeDegrees(

@@ -1,3 +1,5 @@
+import gearIconUrl from "./assets/Gear-icon.png";
+
 export class SatelliteGroupSelector {
   constructor({
     groups,
@@ -23,8 +25,17 @@ export class SatelliteGroupSelector {
     this.stationLatInput = this.element.querySelector("[data-station-lat]");
     this.stationLonInput = this.element.querySelector("[data-station-lon]");
     this.passResultElement = this.element.querySelector("[data-pass-result]");
+    this.panelSettingsElement = this.element.querySelector("[data-panel-settings]");
+    this.panelSettingsButton = this.element.querySelector(
+      "[data-panel-settings-toggle]"
+    );
+    this.panelWidthInput = this.element.querySelector("[data-panel-width]");
+    this.panelOpacityInput = this.element.querySelector("[data-panel-opacity]");
+    this.panelDensitySelect = this.element.querySelector("[data-panel-density]");
     this.hoverElement = this.createHoverElement();
     this.openButton = this.createOpenButton();
+    this.restorePanelPreferences();
+    this.bindResponsiveWidth();
 
     document.body.appendChild(this.element);
     document.body.appendChild(this.hoverElement);
@@ -40,12 +51,29 @@ export class SatelliteGroupSelector {
     const title = document.createElement("h1");
     title.textContent = "Satellite Groups";
 
+    const headerActions = document.createElement("div");
+    const settingsButton = document.createElement("button");
+    const settingsIcon = document.createElement("img");
     const closeButton = document.createElement("button");
+
+    headerActions.className = "satellite-panel-header-actions";
+    settingsButton.type = "button";
+    settingsButton.className = "satellite-panel-icon-button";
+    settingsButton.dataset.panelSettingsToggle = "";
+    settingsButton.setAttribute("aria-label", "Open panel settings");
+    settingsButton.setAttribute("aria-expanded", "false");
+    settingsIcon.src = gearIconUrl;
+    settingsIcon.alt = "";
+    settingsIcon.draggable = false;
+    settingsButton.appendChild(settingsIcon);
+    settingsButton.addEventListener("click", () => this.togglePanelSettings());
+
     closeButton.type = "button";
     closeButton.className = "satellite-panel-close";
     closeButton.textContent = "Close";
     closeButton.addEventListener("click", () => this.setOpen(false));
-    header.append(title, closeButton);
+    headerActions.append(settingsButton, closeButton);
+    header.append(title, headerActions);
     panel.appendChild(header);
 
     const list = document.createElement("div");
@@ -78,10 +106,252 @@ export class SatelliteGroupSelector {
     panel.appendChild(list);
     panel.appendChild(status);
     panel.appendChild(controls);
+    panel.appendChild(this.createPanelCustomizationControls());
     panel.appendChild(this.createGroundStationControls());
     panel.appendChild(selected);
+    panel.appendChild(this.createResizeHandle());
 
     return panel;
+  }
+
+  createResizeHandle() {
+    const handle = document.createElement("div");
+
+    handle.className = "satellite-panel-resize";
+    handle.role = "separator";
+    handle.tabIndex = 0;
+    handle.setAttribute("aria-label", "Resize satellite panel");
+    handle.setAttribute("aria-orientation", "vertical");
+    handle.addEventListener("pointerdown", (event) =>
+      this.handleResizeStart(event, handle)
+    );
+    handle.addEventListener("keydown", (event) => this.handleResizeKeydown(event));
+    return handle;
+  }
+
+  handleResizeStart(event, handle) {
+    if (!this.canResizePanel()) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = this.element.getBoundingClientRect().width;
+
+    handle.setPointerCapture(event.pointerId);
+    this.element.classList.add("is-resizing");
+
+    const handleMove = (moveEvent) => {
+      const width = startWidth + moveEvent.clientX - startX;
+
+      this.setPanelWidth(width);
+    };
+    const handleEnd = () => {
+      this.element.classList.remove("is-resizing");
+      handle.removeEventListener("pointermove", handleMove);
+      handle.removeEventListener("pointerup", handleEnd);
+      handle.removeEventListener("pointercancel", handleEnd);
+    };
+
+    handle.addEventListener("pointermove", handleMove);
+    handle.addEventListener("pointerup", handleEnd);
+    handle.addEventListener("pointercancel", handleEnd);
+  }
+
+  handleResizeKeydown(event) {
+    if (!this.canResizePanel()) return;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+
+    event.preventDefault();
+
+    const currentWidth = this.element.getBoundingClientRect().width;
+    const step = event.shiftKey ? 48 : 16;
+    const { min, max } = this.getPanelWidthLimits();
+
+    if (event.key === "ArrowLeft") this.setPanelWidth(currentWidth - step);
+    if (event.key === "ArrowRight") this.setPanelWidth(currentWidth + step);
+    if (event.key === "Home") this.setPanelWidth(min);
+    if (event.key === "End") this.setPanelWidth(max);
+  }
+
+  createPanelCustomizationControls() {
+    const container = document.createElement("section");
+    const title = document.createElement("h2");
+    const widthControl = this.createRangeControl({
+      label: "Width",
+      dataKey: "panel-width",
+      min: "280",
+      max: "820",
+      step: "10",
+      value: "360",
+    });
+    const opacityControl = this.createRangeControl({
+      label: "Opacity",
+      dataKey: "panel-opacity",
+      min: "20",
+      max: "100",
+      step: "1",
+      value: "88",
+    });
+    const densityControl = document.createElement("label");
+    const densityLabel = document.createElement("span");
+    const densitySelect = document.createElement("select");
+
+    container.className = "panel-customization";
+    container.dataset.panelSettings = "";
+    container.hidden = true;
+    title.textContent = "Panel Settings";
+    densityControl.className = "panel-customization-field";
+    densityLabel.textContent = "Density";
+    densitySelect.dataset.panelDensity = "";
+    densitySelect.append(
+      this.createOption("comfortable", "Comfortable"),
+      this.createOption("compact", "Compact")
+    );
+    densitySelect.addEventListener("change", () =>
+      this.setPanelDensity(densitySelect.value)
+    );
+    densityControl.append(densityLabel, densitySelect);
+
+    container.append(title, widthControl, opacityControl, densityControl);
+    return container;
+  }
+
+  togglePanelSettings(forceOpen = null) {
+    const isOpen = forceOpen ?? Boolean(this.panelSettingsElement?.hidden);
+
+    if (this.panelSettingsElement) {
+      this.panelSettingsElement.hidden = !isOpen;
+    }
+
+    if (this.panelSettingsButton) {
+      this.panelSettingsButton.classList.toggle("is-active", isOpen);
+      this.panelSettingsButton.setAttribute(
+        "aria-label",
+        isOpen ? "Close panel settings" : "Open panel settings"
+      );
+      this.panelSettingsButton.setAttribute("aria-expanded", String(isOpen));
+    }
+  }
+
+  createRangeControl({ label, dataKey, min, max, step, value }) {
+    const field = document.createElement("label");
+    const labelText = document.createElement("span");
+    const input = document.createElement("input");
+
+    field.className = "panel-customization-field";
+    labelText.textContent = label;
+    input.type = "range";
+    input.min = min;
+    input.max = max;
+    input.step = step;
+    input.value = value;
+    input.dataset[this.dataKeyToProperty(dataKey)] = "";
+
+    if (dataKey === "panel-width") {
+      input.addEventListener("input", () => this.setPanelWidth(Number(input.value)));
+    }
+
+    if (dataKey === "panel-opacity") {
+      input.addEventListener("input", () =>
+        this.setPanelOpacity(Number(input.value) / 100)
+      );
+    }
+
+    field.append(labelText, input);
+    return field;
+  }
+
+  createOption(value, text) {
+    const option = document.createElement("option");
+
+    option.value = value;
+    option.textContent = text;
+    return option;
+  }
+
+  restorePanelPreferences() {
+    const width = Number(localStorage.getItem("satellitePanelWidth"));
+    const opacity = Number(localStorage.getItem("satellitePanelOpacity"));
+    const density = localStorage.getItem("satellitePanelDensity");
+
+    if (Number.isFinite(width)) {
+      this.setPanelWidth(width, { persist: false });
+    }
+
+    if (Number.isFinite(opacity)) {
+      this.setPanelOpacity(opacity, { persist: false });
+    }
+
+    if (density) {
+      this.setPanelDensity(density, { persist: false });
+    }
+  }
+
+  bindResponsiveWidth() {
+    window.addEventListener("resize", () => {
+      const width = Number(localStorage.getItem("satellitePanelWidth"));
+
+      if (!Number.isFinite(width)) return;
+      this.setPanelWidth(width, { persist: false });
+    });
+  }
+
+  canResizePanel() {
+    return window.matchMedia("(min-width: 701px)").matches;
+  }
+
+  getPanelWidthLimits() {
+    const viewportPadding = 32;
+    const max = Math.min(820, Math.max(260, window.innerWidth - viewportPadding));
+    const min = Math.min(280, max);
+
+    return { min, max };
+  }
+
+  setPanelWidth(width, { persist = true } = {}) {
+    const { min, max } = this.getPanelWidthLimits();
+    const nextWidth = Math.round(Math.min(max, Math.max(min, width)));
+
+    this.element.style.setProperty("--satellite-panel-width", `${nextWidth}px`);
+
+    if (this.panelWidthInput) {
+      this.panelWidthInput.min = String(min);
+      this.panelWidthInput.max = String(max);
+      this.panelWidthInput.value = String(nextWidth);
+    }
+
+    if (persist) {
+      localStorage.setItem("satellitePanelWidth", String(nextWidth));
+    }
+  }
+
+  setPanelOpacity(opacity, { persist = true } = {}) {
+    const nextOpacity = Math.min(1, Math.max(0.2, opacity));
+
+    this.element.style.setProperty("--satellite-panel-opacity", String(nextOpacity));
+
+    if (this.panelOpacityInput) {
+      this.panelOpacityInput.value = String(Math.round(nextOpacity * 100));
+    }
+
+    if (persist) {
+      localStorage.setItem("satellitePanelOpacity", String(nextOpacity));
+    }
+  }
+
+  setPanelDensity(density, { persist = true } = {}) {
+    const nextDensity = density === "compact" ? "compact" : "comfortable";
+
+    this.element.classList.toggle("is-compact", nextDensity === "compact");
+
+    if (this.panelDensitySelect) {
+      this.panelDensitySelect.value = nextDensity;
+    }
+
+    if (persist) {
+      localStorage.setItem("satellitePanelDensity", nextDensity);
+    }
   }
 
   createGroundStationControls() {

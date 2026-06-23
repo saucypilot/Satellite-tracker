@@ -1,5 +1,11 @@
 import * as THREE from "three";
-import * as satellite from "satellite.js";
+import { json2satrec, twoline2satrec } from "../node_modules/satellite.js/dist/io.js";
+import { gstime, propagate } from "../node_modules/satellite.js/dist/propagation.js";
+import {
+  degreesLat,
+  degreesLong,
+  eciToGeodetic,
+} from "../node_modules/satellite.js/dist/transforms.js";
 import { EARTH_RADIUS, SCALE } from "./utils/coords.js";
 import {
   SATELLITE_GROUP_COLORS,
@@ -63,40 +69,22 @@ export class SatelliteTracker {
 
     const satellites = [];
     const catalogIds = new Set();
-    for (const { group, text } of tleGroups) {
-      const lines = text.trim().split("\n");
+    for (const tleGroup of tleGroups) {
+      const remainingSlots = this.maxSatellites - satellites.length;
 
-      for (
-        let i = 0;
-        i < lines.length && satellites.length < this.maxSatellites;
-        i += 3
-      ) {
-        const name = lines[i].trim();
-        const tle1 = lines[i + 1]?.trim();
-        const tle2 = lines[i + 2]?.trim();
-        const catalogId = tle1?.slice(2, 7);
+      if (remainingSlots <= 0) break;
 
-        if (!tle1 || !tle2 || catalogIds.has(catalogId)) continue;
+      const groupSatellites =
+        tleGroup.format === "json"
+          ? this.createSatellitesFromOmmGroup(tleGroup, catalogIds, remainingSlots)
+          : this.createSatellitesFromTleGroup(tleGroup, catalogIds, remainingSlots);
 
-        const satrec = satellite.twoline2satrec(tle1, tle2);
-        const mesh = this.createSatelliteMesh(group);
-        const sat = {
-          name,
-          group,
-          catalogId,
-          satrec,
-          tle1,
-          tle2,
-          mesh,
-          orbitalPeriodMinutes: this.getOrbitalPeriodMinutes({ satrec }),
-          inclinationDegrees: THREE.MathUtils.radToDeg(satrec.inclo),
-          eccentricity: satrec.ecco,
-          blinkPhase: satellites.length * 0.73,
-        };
+      for (const sat of groupSatellites) {
+        if (satellites.length >= this.maxSatellites) break;
 
-        catalogIds.add(catalogId);
-        this.satelliteByMesh.set(mesh, sat);
-        this.scene.add(mesh);
+        sat.blinkPhase = satellites.length * 0.73;
+        this.satelliteByMesh.set(sat.mesh, sat);
+        this.scene.add(sat.mesh);
         satellites.push(sat);
       }
     }
@@ -107,6 +95,92 @@ export class SatelliteTracker {
       cachedGroups,
       failedGroups,
       limitedByMax: satellites.length === this.maxSatellites,
+    };
+  }
+
+  createSatellitesFromTleGroup({ group, text }, catalogIds, maxSatellites) {
+    const satellites = [];
+    const lines = text
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (let i = 0; i < lines.length; i += 3) {
+      if (satellites.length >= maxSatellites) break;
+
+      const name = lines[i];
+      const tle1 = lines[i + 1];
+      const tle2 = lines[i + 2];
+      const catalogId = tle1?.slice(2, 7).trim();
+
+      if (!tle1 || !tle2 || catalogIds.has(catalogId)) continue;
+
+      const satrec = twoline2satrec(tle1, tle2);
+      const sat = this.createSatellite(group, {
+        name,
+        catalogId,
+        satrec,
+        tle1,
+        tle2,
+      });
+
+      if (!sat) continue;
+
+      catalogIds.add(catalogId);
+      satellites.push(sat);
+    }
+
+    return satellites;
+  }
+
+  createSatellitesFromOmmGroup({ group, records }, catalogIds, maxSatellites) {
+    const satellites = [];
+
+    for (const record of records) {
+      if (satellites.length >= maxSatellites) break;
+
+      const catalogId = String(record.NORAD_CAT_ID ?? "").trim();
+
+      if (!catalogId || catalogIds.has(catalogId)) continue;
+
+      try {
+        const satrec = json2satrec(record);
+        const sat = this.createSatellite(group, {
+          name: record.OBJECT_NAME,
+          catalogId,
+          satrec,
+        });
+
+        if (!sat) continue;
+
+        catalogIds.add(catalogId);
+        satellites.push(sat);
+      } catch (error) {
+        console.warn("Unable to parse CelesTrak OMM record:", record, error);
+      }
+    }
+
+    return satellites;
+  }
+
+  createSatellite(group, { name, catalogId, satrec, tle1 = null, tle2 = null }) {
+    if (!satrec || satrec.error) return null;
+
+    const mesh = this.createSatelliteMesh(group);
+
+    return {
+      name: name?.trim() || `NORAD ${catalogId}`,
+      group,
+      catalogId,
+      satrec,
+      tle1,
+      tle2,
+      mesh,
+      orbitalPeriodMinutes: this.getOrbitalPeriodMinutes({ satrec }),
+      inclinationDegrees: THREE.MathUtils.radToDeg(satrec.inclo),
+      eccentricity: satrec.ecco,
+      blinkPhase: 0,
     };
   }
 
@@ -314,15 +388,15 @@ export class SatelliteTracker {
   }
 
   getSatellitePositionData(sat, date) {
-    const positionAndVelocity = satellite.propagate(sat.satrec, date);
+    const positionAndVelocity = propagate(sat.satrec, date);
     const positionEci = positionAndVelocity.position;
 
     if (!positionEci) return null;
 
-    const gmst = satellite.gstime(date);
-    const positionGd = satellite.eciToGeodetic(positionEci, gmst);
-    const lat = satellite.degreesLat(positionGd.latitude);
-    const lon = satellite.degreesLong(positionGd.longitude);
+    const gmst = gstime(date);
+    const positionGd = eciToGeodetic(positionEci, gmst);
+    const lat = degreesLat(positionGd.latitude);
+    const lon = degreesLong(positionGd.longitude);
     const alt = positionGd.height;
     const radius = (EARTH_RADIUS + alt) * SCALE;
     const phi = THREE.MathUtils.degToRad(90 - lat);

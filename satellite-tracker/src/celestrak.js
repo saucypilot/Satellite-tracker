@@ -1,8 +1,7 @@
-const CELESTRAK_TLE_BASE_URL =
-  "https://celestrak.org/NORAD/elements/gp.php?FORMAT=tle";
+const CELESTRAK_GP_BASE_URL = "https://celestrak.org/NORAD/elements/gp.php";
 const TLE_CACHE_NAME = "satellite-tracker-tle-v1";
 const TLE_CACHE_KEY_PREFIX = "satellite-tracker:tle:";
-const TLE_CACHE_VERSION = 1;
+const TLE_CACHE_VERSION = 2;
 
 export const CELESTRAK_GROUPS = [
   { id: "stations", label: "ISS & space stations" },
@@ -68,10 +67,12 @@ export async function loadCelesTrakGroups(groups) {
 }
 
 async function fetchGroup(group) {
-  const url = `${CELESTRAK_TLE_BASE_URL}&GROUP=${encodeURIComponent(group)}`;
+  const tleUrl = getCelesTrakUrl(group, "tle");
+  const jsonUrl = getCelesTrakUrl(group, "json");
+  let tleError = null;
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(tleUrl);
     const text = await res.text();
 
     if (!res.ok) {
@@ -90,10 +91,42 @@ async function fetchGroup(group) {
       );
     }
 
-    await writeCachedTle(group, text);
-    return { group, text, source: "network", fetchedAt: Date.now() };
+    await writeCachedGroup(group, { format: "tle", text });
+    return { group, format: "tle", text, source: "network", fetchedAt: Date.now() };
   } catch (error) {
-    const cached = await readCachedTle(group);
+    tleError = error;
+  }
+
+  try {
+    const res = await fetch(jsonUrl);
+    const records = await res.json();
+
+    if (!res.ok) {
+      throw new CelesTrakLoadError(
+        group,
+        `CelesTrak returned HTTP ${res.status} for "${group}"`,
+        { status: res.status }
+      );
+    }
+
+    if (!hasOmmData(records)) {
+      throw new CelesTrakLoadError(
+        group,
+        `CelesTrak returned no OMM data for "${group}"`,
+        { status: res.status }
+      );
+    }
+
+    await writeCachedGroup(group, { format: "json", records });
+    return {
+      group,
+      format: "json",
+      records,
+      source: "network",
+      fetchedAt: Date.now(),
+    };
+  } catch (error) {
+    const cached = await readCachedGroup(group);
 
     if (cached) {
       console.warn(
@@ -102,10 +135,16 @@ async function fetchGroup(group) {
       );
       return {
         group,
+        format: cached.format,
         text: cached.text,
+        records: cached.records,
         source: "cache",
         fetchedAt: cached.fetchedAt,
       };
+    }
+
+    if (tleError instanceof CelesTrakLoadError) {
+      throw tleError;
     }
 
     if (error instanceof CelesTrakLoadError) {
@@ -120,8 +159,17 @@ async function fetchGroup(group) {
   }
 }
 
-async function readCachedTle(group) {
-  const cacheApiEntry = await readCacheApiTle(group);
+function getCelesTrakUrl(group, format) {
+  const params = new URLSearchParams({
+    GROUP: group,
+    FORMAT: format,
+  });
+
+  return `${CELESTRAK_GP_BASE_URL}?${params}`;
+}
+
+async function readCachedGroup(group) {
+  const cacheApiEntry = await readCacheApiGroup(group);
 
   if (cacheApiEntry) return cacheApiEntry;
 
@@ -132,7 +180,7 @@ async function readCachedTle(group) {
 
     const cached = JSON.parse(raw);
 
-    if (!cached?.text || !hasTleData(cached.text)) return null;
+    if (!isValidGroupData(cached)) return null;
 
     return cached;
   } catch {
@@ -140,7 +188,7 @@ async function readCachedTle(group) {
   }
 }
 
-async function readCacheApiTle(group) {
+async function readCacheApiGroup(group) {
   try {
     const cache = await globalThis.caches?.open(TLE_CACHE_NAME);
     const res = await cache?.match(getTleCacheRequest(group));
@@ -148,10 +196,24 @@ async function readCacheApiTle(group) {
     if (!res) return null;
 
     const text = await res.text();
+    const format = res.headers.get("x-format") || "tle";
+
+    if (format === "json") {
+      const records = JSON.parse(text);
+
+      if (!hasOmmData(records)) return null;
+
+      return {
+        format,
+        records,
+        fetchedAt: Number(res.headers.get("x-fetched-at")) || null,
+      };
+    }
 
     if (!hasTleData(text)) return null;
 
     return {
+      format,
       text,
       fetchedAt: Number(res.headers.get("x-fetched-at")) || null,
     };
@@ -160,8 +222,10 @@ async function readCacheApiTle(group) {
   }
 }
 
-async function writeCachedTle(group, text) {
+async function writeCachedGroup(group, data) {
   const fetchedAt = Date.now();
+  const format = data.format ?? "tle";
+  const body = format === "json" ? JSON.stringify(data.records) : data.text;
 
   try {
     const cache = await globalThis.caches?.open(TLE_CACHE_NAME);
@@ -169,9 +233,10 @@ async function writeCachedTle(group, text) {
     if (cache) {
       await cache.put(
         getTleCacheRequest(group),
-        new Response(text, {
+        new Response(body, {
           headers: {
-            "content-type": "text/plain",
+            "content-type": format === "json" ? "application/json" : "text/plain",
+            "x-format": format,
             "x-fetched-at": String(fetchedAt),
           },
         })
@@ -185,8 +250,10 @@ async function writeCachedTle(group, text) {
     globalThis.localStorage?.setItem(
       getTleCacheKey(group),
       JSON.stringify({
+        format,
         fetchedAt,
-        text,
+        text: data.text,
+        records: data.records,
       })
     );
   } catch {
@@ -211,6 +278,23 @@ function hasTleData(text) {
   }
 
   return false;
+}
+
+function hasOmmData(records) {
+  return (
+    Array.isArray(records) &&
+    records.some(
+      (record) =>
+        record?.OBJECT_NAME &&
+        record?.NORAD_CAT_ID &&
+        Number.isFinite(Number(record.MEAN_MOTION))
+    )
+  );
+}
+
+function isValidGroupData(data) {
+  if (data?.format === "json") return hasOmmData(data.records);
+  return Boolean(data?.text && hasTleData(data.text));
 }
 
 function formatCacheAge(timestamp) {
