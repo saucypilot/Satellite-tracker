@@ -21,7 +21,7 @@ const SATELLITE_SIZE = 0.04;
 export class SatelliteTracker {
   constructor(
     scene,
-    { maxSatellites = 3000, groups = ["active"] } = {}
+    { maxSatellites = 8000, groups = ["active"] } = {}
   ) {
     this.scene = scene;
     this.maxSatellites = maxSatellites;
@@ -69,7 +69,34 @@ export class SatelliteTracker {
 
     const satellites = [];
     const catalogIds = new Set();
-    for (const tleGroup of tleGroups) {
+    const orderedTleGroups = this.getPrioritizedGroups(tleGroups);
+    const firstPassLimit = Math.max(
+      1,
+      Math.floor(this.maxSatellites / orderedTleGroups.length)
+    );
+
+    for (const tleGroup of orderedTleGroups) {
+      const remainingSlots = this.maxSatellites - satellites.length;
+
+      if (remainingSlots <= 0) break;
+
+      const groupSatellites =
+        tleGroup.format === "json"
+          ? this.createSatellitesFromOmmGroup(
+              tleGroup,
+              catalogIds,
+              Math.min(firstPassLimit, remainingSlots)
+            )
+          : this.createSatellitesFromTleGroup(
+              tleGroup,
+              catalogIds,
+              Math.min(firstPassLimit, remainingSlots)
+            );
+
+      this.addSatellitesToScene(groupSatellites, satellites);
+    }
+
+    for (const tleGroup of orderedTleGroups) {
       const remainingSlots = this.maxSatellites - satellites.length;
 
       if (remainingSlots <= 0) break;
@@ -79,14 +106,7 @@ export class SatelliteTracker {
           ? this.createSatellitesFromOmmGroup(tleGroup, catalogIds, remainingSlots)
           : this.createSatellitesFromTleGroup(tleGroup, catalogIds, remainingSlots);
 
-      for (const sat of groupSatellites) {
-        if (satellites.length >= this.maxSatellites) break;
-
-        sat.blinkPhase = satellites.length * 0.73;
-        this.satelliteByMesh.set(sat.mesh, sat);
-        this.scene.add(sat.mesh);
-        satellites.push(sat);
-      }
+      this.addSatellitesToScene(groupSatellites, satellites);
     }
 
     this.satellites = satellites;
@@ -182,6 +202,25 @@ export class SatelliteTracker {
       eccentricity: satrec.ecco,
       blinkPhase: 0,
     };
+  }
+
+  getPrioritizedGroups(tleGroups) {
+    return [...tleGroups].sort((a, b) => {
+      if (a.group === "active" && b.group !== "active") return 1;
+      if (a.group !== "active" && b.group === "active") return -1;
+      return 0;
+    });
+  }
+
+  addSatellitesToScene(groupSatellites, satellites) {
+    for (const sat of groupSatellites) {
+      if (satellites.length >= this.maxSatellites) break;
+
+      sat.blinkPhase = satellites.length * 0.73;
+      this.satelliteByMesh.set(sat.mesh, sat);
+      this.scene.add(sat.mesh);
+      satellites.push(sat);
+    }
   }
 
   clearSatellites() {

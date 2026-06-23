@@ -99,7 +99,6 @@ async function fetchGroup(group) {
 
   try {
     const res = await fetch(jsonUrl);
-    const records = await res.json();
 
     if (!res.ok) {
       throw new CelesTrakLoadError(
@@ -108,6 +107,8 @@ async function fetchGroup(group) {
         { status: res.status }
       );
     }
+
+    const records = await res.json();
 
     if (!hasOmmData(records)) {
       throw new CelesTrakLoadError(
