@@ -1,5 +1,7 @@
 # Satellite Tracker
 
+<img width="800" height="403" alt="ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/679e1689-341d-4ae6-ba32-aa911c19cc9c" />
+
 An interactive 3D satellite visualization and pass-prediction web application built with Three.js, satellite.js, and live orbital data from CelesTrak.
 
 The application renders Earth and its surrounding space environment, propagates satellite positions from Two-Line Element data in real time, and allows users to inspect or follow individual spacecraft directly in the browser.
