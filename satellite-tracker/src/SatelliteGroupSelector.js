@@ -1,4 +1,5 @@
 import gearIconUrl from "./assets/Gear-icon.png";
+import { PanelPreferences } from "./PanelPreferences.js";
 
 export class SatelliteGroupSelector {
   constructor({
@@ -61,8 +62,15 @@ export class SatelliteGroupSelector {
       this.timelineElement.querySelector("[data-timeline-note]");
     this.hoverElement = this.createHoverElement();
     this.openButton = this.createOpenButton();
-    this.restorePanelPreferences();
-    this.bindResponsiveWidth();
+    this.panelPreferences = new PanelPreferences({
+      panel: this.element,
+      timelinePanel: this.timelineElement,
+      settingsElement: this.panelSettingsElement,
+      settingsButton: this.panelSettingsButton,
+      widthInput: this.panelWidthInput,
+      opacityInput: this.panelOpacityInput,
+      densityInput: this.panelDensitySelect,
+    });
 
     document.body.appendChild(this.element);
     document.body.appendChild(this.timelineElement);
@@ -94,7 +102,9 @@ export class SatelliteGroupSelector {
     settingsIcon.alt = "";
     settingsIcon.draggable = false;
     settingsButton.appendChild(settingsIcon);
-    settingsButton.addEventListener("click", () => this.togglePanelSettings());
+    settingsButton.addEventListener("click", () =>
+      this.panelPreferences.toggleSettings()
+    );
 
     closeButton.type = "button";
     closeButton.className = "satellite-panel-close";
@@ -170,55 +180,12 @@ export class SatelliteGroupSelector {
     handle.setAttribute("aria-label", "Resize satellite panel");
     handle.setAttribute("aria-orientation", "vertical");
     handle.addEventListener("pointerdown", (event) =>
-      this.handleResizeStart(event, handle)
+      this.panelPreferences.handleResizeStart(event, handle)
     );
-    handle.addEventListener("keydown", (event) => this.handleResizeKeydown(event));
+    handle.addEventListener("keydown", (event) =>
+      this.panelPreferences.handleResizeKeydown(event)
+    );
     return handle;
-  }
-
-  handleResizeStart(event, handle) {
-    if (!this.canResizePanel()) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const startX = event.clientX;
-    const startWidth = this.element.getBoundingClientRect().width;
-
-    handle.setPointerCapture(event.pointerId);
-    this.element.classList.add("is-resizing");
-
-    const handleMove = (moveEvent) => {
-      const width = startWidth + moveEvent.clientX - startX;
-
-      this.setPanelWidth(width);
-    };
-    const handleEnd = () => {
-      this.element.classList.remove("is-resizing");
-      handle.removeEventListener("pointermove", handleMove);
-      handle.removeEventListener("pointerup", handleEnd);
-      handle.removeEventListener("pointercancel", handleEnd);
-    };
-
-    handle.addEventListener("pointermove", handleMove);
-    handle.addEventListener("pointerup", handleEnd);
-    handle.addEventListener("pointercancel", handleEnd);
-  }
-
-  handleResizeKeydown(event) {
-    if (!this.canResizePanel()) return;
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-
-    event.preventDefault();
-
-    const currentWidth = this.element.getBoundingClientRect().width;
-    const step = event.shiftKey ? 48 : 16;
-    const { min, max } = this.getPanelWidthLimits();
-
-    if (event.key === "ArrowLeft") this.setPanelWidth(currentWidth - step);
-    if (event.key === "ArrowRight") this.setPanelWidth(currentWidth + step);
-    if (event.key === "Home") this.setPanelWidth(min);
-    if (event.key === "End") this.setPanelWidth(max);
   }
 
   createPanelCustomizationControls() {
@@ -256,7 +223,7 @@ export class SatelliteGroupSelector {
       this.createOption("compact", "Compact")
     );
     densitySelect.addEventListener("change", () =>
-      this.setPanelDensity(densitySelect.value)
+      this.panelPreferences.setDensity(densitySelect.value)
     );
     densityControl.append(densityLabel, densitySelect);
 
@@ -375,23 +342,6 @@ export class SatelliteGroupSelector {
     return button;
   }
 
-  togglePanelSettings(forceOpen = null) {
-    const isOpen = forceOpen ?? Boolean(this.panelSettingsElement?.hidden);
-
-    if (this.panelSettingsElement) {
-      this.panelSettingsElement.hidden = !isOpen;
-    }
-
-    if (this.panelSettingsButton) {
-      this.panelSettingsButton.classList.toggle("is-active", isOpen);
-      this.panelSettingsButton.setAttribute(
-        "aria-label",
-        isOpen ? "Close panel settings" : "Open panel settings"
-      );
-      this.panelSettingsButton.setAttribute("aria-expanded", String(isOpen));
-    }
-  }
-
   createRangeControl({ label, dataKey, min, max, step, value }) {
     const field = document.createElement("label");
     const labelText = document.createElement("span");
@@ -407,12 +357,14 @@ export class SatelliteGroupSelector {
     input.dataset[this.dataKeyToProperty(dataKey)] = "";
 
     if (dataKey === "panel-width") {
-      input.addEventListener("input", () => this.setPanelWidth(Number(input.value)));
+      input.addEventListener("input", () =>
+        this.panelPreferences.setWidth(Number(input.value))
+      );
     }
 
     if (dataKey === "panel-opacity") {
       input.addEventListener("input", () =>
-        this.setPanelOpacity(Number(input.value) / 100)
+        this.panelPreferences.setOpacity(Number(input.value) / 100)
       );
     }
 
@@ -426,94 +378,6 @@ export class SatelliteGroupSelector {
     option.value = value;
     option.textContent = text;
     return option;
-  }
-
-  restorePanelPreferences() {
-    const width = Number(localStorage.getItem("satellitePanelWidth"));
-    const opacity = Number(localStorage.getItem("satellitePanelOpacity"));
-    const density = localStorage.getItem("satellitePanelDensity");
-
-    if (Number.isFinite(width)) {
-      this.setPanelWidth(width, { persist: false });
-    }
-
-    if (Number.isFinite(opacity)) {
-      this.setPanelOpacity(opacity, { persist: false });
-    }
-
-    if (density) {
-      this.setPanelDensity(density, { persist: false });
-    }
-  }
-
-  bindResponsiveWidth() {
-    window.addEventListener("resize", () => {
-      const width = Number(localStorage.getItem("satellitePanelWidth"));
-
-      if (!Number.isFinite(width)) return;
-      this.setPanelWidth(width, { persist: false });
-    });
-  }
-
-  canResizePanel() {
-    return window.matchMedia("(min-width: 701px)").matches;
-  }
-
-  getPanelWidthLimits() {
-    const viewportPadding = 32;
-    const max = Math.min(820, Math.max(260, window.innerWidth - viewportPadding));
-    const min = Math.min(280, max);
-
-    return { min, max };
-  }
-
-  setPanelWidth(width, { persist = true } = {}) {
-    const { min, max } = this.getPanelWidthLimits();
-    const nextWidth = Math.round(Math.min(max, Math.max(min, width)));
-
-    this.element.style.setProperty("--satellite-panel-width", `${nextWidth}px`);
-
-    if (this.panelWidthInput) {
-      this.panelWidthInput.min = String(min);
-      this.panelWidthInput.max = String(max);
-      this.panelWidthInput.value = String(nextWidth);
-    }
-
-    if (persist) {
-      localStorage.setItem("satellitePanelWidth", String(nextWidth));
-    }
-  }
-
-  setPanelOpacity(opacity, { persist = true } = {}) {
-    const nextOpacity = Math.min(1, Math.max(0.2, opacity));
-
-    this.element.style.setProperty("--satellite-panel-opacity", String(nextOpacity));
-    this.timelineElement?.style.setProperty(
-      "--satellite-panel-opacity",
-      String(nextOpacity)
-    );
-
-    if (this.panelOpacityInput) {
-      this.panelOpacityInput.value = String(Math.round(nextOpacity * 100));
-    }
-
-    if (persist) {
-      localStorage.setItem("satellitePanelOpacity", String(nextOpacity));
-    }
-  }
-
-  setPanelDensity(density, { persist = true } = {}) {
-    const nextDensity = density === "compact" ? "compact" : "comfortable";
-
-    this.element.classList.toggle("is-compact", nextDensity === "compact");
-
-    if (this.panelDensitySelect) {
-      this.panelDensitySelect.value = nextDensity;
-    }
-
-    if (persist) {
-      localStorage.setItem("satellitePanelDensity", nextDensity);
-    }
   }
 
   createGroundStationControls() {
