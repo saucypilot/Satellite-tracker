@@ -50,6 +50,7 @@ The application renders Earth and its surrounding space environment, propagates 
 - **JavaScript (ES modules)**
 - **Three.js** for instanced satellite rendering, camera controls, lighting, and scene management
 - **satellite.js** for SGP4 orbital propagation and coordinate transformations
+- **Web Workers** for parallel, off-main-thread orbital propagation
 - **CelesTrak** for current TLE satellite datasets
 - **Vite** for local development and production builds
 - **Web Geolocation API** for ground-station positioning
@@ -58,13 +59,13 @@ The application renders Earth and its surrounding space environment, propagates 
 
 1. The application requests one or more satellite groups from CelesTrak.
 2. Each satellite's TLE is converted into an SGP4 satellite record using satellite.js.
-3. Satellite positions are periodically propagated in Earth-centered inertial coordinates.
-4. The position is transformed and scaled into the Three.js scene.
+3. A Web Worker pool periodically propagates satellite positions in parallel and converts them into scene coordinates.
+4. Workers transfer packed position buffers back to the main thread, which updates the Three.js instance matrices.
 5. Selecting a satellite, either from the scene or search, draws a predicted orbital path, moves the camera to it, and exposes its orbital data.
 6. Pass prediction searches forward from the current time for horizon crossings relative to a chosen ground station.
 7. The predicted pass is sampled to calculate maximum elevation, duration, range, azimuth, and likely visibility conditions.
 
-Visible satellites are grouped by color and rendered with `THREE.InstancedMesh`. Each group shares one geometry and material, avoiding thousands of separate satellite draw calls. Position propagation runs less frequently than the display frame rate because orbital motion does not require a 60 Hz refresh.
+Visible satellites are grouped by color and rendered with `THREE.InstancedMesh`. Each group shares one geometry and material, avoiding thousands of separate satellite draw calls. SGP4 propagation runs in a worker pool and transfers packed numeric buffers back to the renderer, keeping orbital calculations off the UI thread. Position propagation runs less frequently than the display frame rate because orbital motion does not require a 60 Hz refresh.
 
 ## Getting Started
 

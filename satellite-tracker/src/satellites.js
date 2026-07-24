@@ -11,6 +11,7 @@ import {
   SATELLITE_GROUP_COLORS,
   loadCelesTrakGroups,
 } from "./celestrak.js";
+import { SatellitePropagationPool } from "./SatellitePropagationPool.js";
 export { CELESTRAK_GROUPS, SATELLITE_GROUP_COLOR_HEX } from "./celestrak.js";
 
 const SATELLITE_BLINK_SPEED = 0.004;
@@ -18,6 +19,7 @@ const SATELLITE_BLINK_MIN_SCALE = 0.82;
 const SATELLITE_BLINK_MAX_SCALE = 1;
 const SATELLITE_SIZE = 0.04;
 const SATELLITE_UPDATE_INTERVAL_MS = 250;
+const PROPAGATION_VALUES_PER_SATELLITE = 6;
 
 export class SatelliteTracker {
   constructor(
@@ -30,6 +32,11 @@ export class SatelliteTracker {
     this.satellites = [];
     this.satelliteByMesh = new Map();
     this.satelliteInstanceMeshes = [];
+    this.propagationPool = new SatellitePropagationPool();
+    this.propagationGeneration = 0;
+    this.propagationInFlight = false;
+    this.pendingPropagation = null;
+    this.usesWorkerPropagation = false;
     this.lastPositionUpdate = -Infinity;
     this.selectedSatellite = null;
     this.selectionMarker = this.createSelectionMarker();
@@ -115,7 +122,8 @@ export class SatelliteTracker {
 
     this.satellites = satellites;
     this.createSatelliteInstanceMeshes();
-    this.update(new Date(), true);
+    this.initializePropagationWorkers();
+    await this.update(new Date(), true);
     return {
       count: satellites.length,
       cachedGroups,
@@ -229,6 +237,11 @@ export class SatelliteTracker {
   }
 
   clearSatellites() {
+    this.propagationGeneration++;
+    this.propagationPool.terminate();
+    this.propagationInFlight = false;
+    this.pendingPropagation = null;
+    this.usesWorkerPropagation = false;
     this.clearSelection();
     this.satelliteByMesh.clear();
 
@@ -242,17 +255,72 @@ export class SatelliteTracker {
     this.satellites = [];
   }
 
+  initializePropagationWorkers() {
+    try {
+      this.usesWorkerPropagation = this.propagationPool.initialize(
+        this.satellites
+      );
+    } catch (error) {
+      console.warn(
+        "Web Workers are unavailable; using main-thread satellite propagation.",
+        error
+      );
+      this.propagationPool.terminate();
+      this.usesWorkerPropagation = false;
+    }
+  }
+
   update(date, force = false) {
     const frameTime = performance.now();
 
     if (
       !force &&
-      frameTime - this.lastPositionUpdate < SATELLITE_UPDATE_INTERVAL_MS
+      (this.propagationInFlight ||
+        frameTime - this.lastPositionUpdate < SATELLITE_UPDATE_INTERVAL_MS)
     ) {
-      return;
+      return this.pendingPropagation ?? Promise.resolve();
     }
 
     this.lastPositionUpdate = frameTime;
+
+    if (!this.usesWorkerPropagation) {
+      this.updateSatellitesSynchronously(date);
+      return Promise.resolve();
+    }
+
+    const generation = this.propagationGeneration;
+    const timestamp = date.getTime();
+
+    this.propagationInFlight = true;
+    this.pendingPropagation = this.propagationPool
+      .propagate(date)
+      .then((batches) => {
+        if (generation !== this.propagationGeneration) return;
+
+        this.applyPropagationBatches(batches, timestamp);
+      })
+      .catch((error) => {
+        if (generation !== this.propagationGeneration) return;
+
+        console.warn(
+          "Satellite worker propagation failed; falling back to the main thread.",
+          error
+        );
+        this.propagationPool.terminate();
+        this.usesWorkerPropagation = false;
+        this.updateSatellitesSynchronously(date);
+      })
+      .finally(() => {
+        if (generation !== this.propagationGeneration) return;
+
+        this.propagationInFlight = false;
+        this.pendingPropagation = null;
+      });
+
+    return this.pendingPropagation;
+  }
+
+  updateSatellitesSynchronously(date) {
     const timestamp = date.getTime();
 
     for (const sat of this.satellites) {
@@ -260,6 +328,42 @@ export class SatelliteTracker {
       this.updateSatelliteBlink(sat, timestamp);
     }
 
+    this.markInstanceMatricesForUpdate();
+  }
+
+  applyPropagationBatches(batches, timestamp) {
+    for (const batch of batches) {
+      for (let index = 0; index < batch.satelliteCount; index++) {
+        const offset = index * PROPAGATION_VALUES_PER_SATELLITE;
+        const x = batch.positions[offset];
+
+        if (!Number.isFinite(x)) continue;
+
+        const sat = this.satellites[batch.startIndex + index];
+
+        if (!sat) continue;
+
+        sat.mesh.position.set(
+          x,
+          batch.positions[offset + 1],
+          batch.positions[offset + 2]
+        );
+        sat.latitude = batch.positions[offset + 3];
+        sat.longitude = batch.positions[offset + 4];
+        sat.altitudeKm = batch.positions[offset + 5];
+
+        if (sat === this.selectedSatellite) {
+          this.selectionMarker.position.copy(sat.mesh.position);
+        }
+
+        this.updateSatelliteBlink(sat, timestamp);
+      }
+    }
+
+    this.markInstanceMatricesForUpdate();
+  }
+
+  markInstanceMatricesForUpdate() {
     for (const instanceMesh of this.satelliteInstanceMeshes) {
       instanceMesh.instanceMatrix.needsUpdate = true;
     }
@@ -557,10 +661,22 @@ export class SatelliteTracker {
   }
 
   getSatellitePositionData(sat, date) {
-    const positionAndVelocity = propagate(sat.satrec, date);
-    const positionEci = positionAndVelocity.position;
+    let positionEci = null;
 
-    if (!positionEci) return null;
+    try {
+      positionEci = propagate(sat.satrec, date)?.position;
+    } catch {
+      return null;
+    }
+
+    if (
+      !positionEci ||
+      !Number.isFinite(positionEci.x) ||
+      !Number.isFinite(positionEci.y) ||
+      !Number.isFinite(positionEci.z)
+    ) {
+      return null;
+    }
 
     const gmst = gstime(date);
     const positionGd = eciToGeodetic(positionEci, gmst);
