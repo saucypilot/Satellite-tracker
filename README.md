@@ -13,7 +13,7 @@ The application renders Earth and its surrounding space environment, propagates 
 - Live satellite data loaded from CelesTrak
 - Multiple selectable satellite groups with color coding
 - Search loaded satellites by name or NORAD catalog ID, with matching results as you type
-- Support for up to 3,000 displayed satellites
+- Support for up to 8,000 displayed satellites using instanced rendering
 - Click a satellite to view its orbital information
 - Double-click a satellite to follow it with the camera
 - Full-orbit trajectory visualization for the selected satellite
@@ -48,7 +48,7 @@ The application renders Earth and its surrounding space environment, propagates 
 ## Tech Stack
 
 - **JavaScript (ES modules)**
-- **Three.js** for 3D rendering, camera controls, lighting, and scene management
+- **Three.js** for instanced satellite rendering, camera controls, lighting, and scene management
 - **satellite.js** for SGP4 orbital propagation and coordinate transformations
 - **CelesTrak** for current TLE satellite datasets
 - **Vite** for local development and production builds
@@ -58,11 +58,13 @@ The application renders Earth and its surrounding space environment, propagates 
 
 1. The application requests one or more satellite groups from CelesTrak.
 2. Each satellite's TLE is converted into an SGP4 satellite record using satellite.js.
-3. On every animation frame, the current satellite position is propagated in Earth-centered inertial coordinates.
+3. Satellite positions are periodically propagated in Earth-centered inertial coordinates.
 4. The position is transformed and scaled into the Three.js scene.
 5. Selecting a satellite, either from the scene or search, draws a predicted orbital path, moves the camera to it, and exposes its orbital data.
 6. Pass prediction searches forward from the current time for horizon crossings relative to a chosen ground station.
 7. The predicted pass is sampled to calculate maximum elevation, duration, range, azimuth, and likely visibility conditions.
+
+Visible satellites are grouped by color and rendered with `THREE.InstancedMesh`. Each group shares one geometry and material, avoiding thousands of separate satellite draw calls. Position propagation runs less frequently than the display frame rate because orbital motion does not require a 60 Hz refresh.
 
 ## Getting Started
 
