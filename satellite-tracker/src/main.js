@@ -393,7 +393,10 @@ class SatelliteTrackerApp {
     );
 
     if (intersects.length > 0) {
-      return this.satelliteTracker.getSatelliteByMesh(intersects[0].object);
+      return this.satelliteTracker.getSatelliteByMesh(
+        intersects[0].object,
+        intersects[0].instanceId
+      );
     }
 
     return this.satelliteTracker.findSatelliteNearScreenPoint(

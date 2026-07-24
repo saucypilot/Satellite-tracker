@@ -14,9 +14,10 @@ import {
 export { CELESTRAK_GROUPS, SATELLITE_GROUP_COLOR_HEX } from "./celestrak.js";
 
 const SATELLITE_BLINK_SPEED = 0.004;
-const SATELLITE_BLINK_MIN_OPACITY = 0.72;
-const SATELLITE_BLINK_MAX_OPACITY = 1;
+const SATELLITE_BLINK_MIN_SCALE = 0.82;
+const SATELLITE_BLINK_MAX_SCALE = 1;
 const SATELLITE_SIZE = 0.04;
+const SATELLITE_UPDATE_INTERVAL_MS = 250;
 
 export class SatelliteTracker {
   constructor(
@@ -28,6 +29,8 @@ export class SatelliteTracker {
     this.groups = groups;
     this.satellites = [];
     this.satelliteByMesh = new Map();
+    this.satelliteInstanceMeshes = [];
+    this.lastPositionUpdate = -Infinity;
     this.selectedSatellite = null;
     this.selectionMarker = this.createSelectionMarker();
     this.trajectoryLine = null;
@@ -111,6 +114,8 @@ export class SatelliteTracker {
     }
 
     this.satellites = satellites;
+    this.createSatelliteInstanceMeshes();
+    this.update(new Date(), true);
     return {
       count: satellites.length,
       cachedGroups,
@@ -219,7 +224,6 @@ export class SatelliteTracker {
 
       sat.blinkPhase = satellites.length * 0.73;
       this.satelliteByMesh.set(sat.mesh, sat);
-      this.scene.add(sat.mesh);
       satellites.push(sat);
     }
   }
@@ -228,47 +232,95 @@ export class SatelliteTracker {
     this.clearSelection();
     this.satelliteByMesh.clear();
 
-    for (const sat of this.satellites) {
-      this.scene.remove(sat.mesh);
-      sat.mesh.geometry.dispose();
-      sat.mesh.material.dispose();
+    for (const instanceMesh of this.satelliteInstanceMeshes) {
+      this.scene.remove(instanceMesh);
+      instanceMesh.geometry.dispose();
+      instanceMesh.material.dispose();
     }
 
+    this.satelliteInstanceMeshes = [];
     this.satellites = [];
   }
 
-  update(date) {
+  update(date, force = false) {
+    const frameTime = performance.now();
+
+    if (
+      !force &&
+      frameTime - this.lastPositionUpdate < SATELLITE_UPDATE_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    this.lastPositionUpdate = frameTime;
     const timestamp = date.getTime();
 
     for (const sat of this.satellites) {
       this.updateSatellitePosition(sat, date);
       this.updateSatelliteBlink(sat, timestamp);
     }
+
+    for (const instanceMesh of this.satelliteInstanceMeshes) {
+      instanceMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   createSatelliteMesh(group) {
-    return new THREE.Mesh(
-      new THREE.SphereGeometry(SATELLITE_SIZE, 16, 16),
-      new THREE.MeshBasicMaterial({
+    return new THREE.Object3D();
+  }
+
+  createSatelliteInstanceMeshes() {
+    const satellitesByGroup = new Map();
+
+    for (const sat of this.satellites) {
+      const groupSatellites = satellitesByGroup.get(sat.group) ?? [];
+
+      groupSatellites.push(sat);
+      satellitesByGroup.set(sat.group, groupSatellites);
+    }
+
+    for (const [group, satellites] of satellitesByGroup) {
+      const geometry = new THREE.SphereGeometry(SATELLITE_SIZE, 8, 8);
+      const material = new THREE.MeshBasicMaterial({
         color: SATELLITE_GROUP_COLORS[group] ?? 0xffffff,
         transparent: true,
-        opacity: SATELLITE_BLINK_MAX_OPACITY,
+        opacity: 0.92,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         toneMapped: false,
-      })
-    );
+      });
+      const instanceMesh = new THREE.InstancedMesh(
+        geometry,
+        material,
+        satellites.length
+      );
+
+      instanceMesh.frustumCulled = false;
+      instanceMesh.userData.satellites = satellites;
+      satellites.forEach((sat, index) => {
+        sat.instanceMesh = instanceMesh;
+        sat.instanceIndex = index;
+      });
+      this.satelliteInstanceMeshes.push(instanceMesh);
+      this.scene.add(instanceMesh);
+    }
   }
 
   updateSatelliteBlink(sat, timestamp) {
     const blink =
       (Math.sin(timestamp * SATELLITE_BLINK_SPEED + sat.blinkPhase) + 1) / 2;
 
-    sat.mesh.material.opacity = THREE.MathUtils.lerp(
-      SATELLITE_BLINK_MIN_OPACITY,
-      SATELLITE_BLINK_MAX_OPACITY,
-      blink
-    );
+    if (sat !== this.selectedSatellite) {
+      sat.mesh.scale.setScalar(
+        THREE.MathUtils.lerp(
+          SATELLITE_BLINK_MIN_SCALE,
+          SATELLITE_BLINK_MAX_SCALE,
+          blink
+        )
+      );
+    }
+
+    this.updateSatelliteInstance(sat);
   }
 
   createSelectionMarker() {
@@ -288,7 +340,7 @@ export class SatelliteTracker {
   }
 
   getSatelliteMeshes() {
-    return this.satellites.map((sat) => sat.mesh);
+    return this.satelliteInstanceMeshes;
   }
 
   searchSatellites(query, limit = 8) {
@@ -344,7 +396,11 @@ export class SatelliteTracker {
     return this.selectSatellite(sat, date);
   }
 
-  getSatelliteByMesh(mesh) {
+  getSatelliteByMesh(mesh, instanceId = null) {
+    if (instanceId != null) {
+      return mesh.userData.satellites?.[instanceId] ?? null;
+    }
+
     return this.satelliteByMesh.get(mesh) ?? null;
   }
 
@@ -353,9 +409,10 @@ export class SatelliteTracker {
       this.selectedSatellite.mesh.scale.setScalar(1);
     }
 
-    this.updateSatelliteScenePosition(sat, date);
+    this.updateSatellitePosition(sat, date);
     this.selectedSatellite = sat;
     sat.mesh.scale.setScalar(1.9);
+    this.updateSatelliteInstance(sat);
     this.selectionMarker.visible = true;
     this.selectionMarker.position.copy(sat.mesh.position);
     this.drawTrajectory(sat, date);
@@ -471,6 +528,13 @@ export class SatelliteTracker {
     if (sat === this.selectedSatellite) {
       this.selectionMarker.position.copy(position);
     }
+  }
+
+  updateSatelliteInstance(sat) {
+    if (!sat.instanceMesh || sat.instanceIndex == null) return;
+
+    sat.mesh.updateMatrix();
+    sat.instanceMesh.setMatrixAt(sat.instanceIndex, sat.mesh.matrix);
   }
 
   getSatelliteScenePosition(sat, date) {
