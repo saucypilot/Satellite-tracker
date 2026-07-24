@@ -291,6 +291,28 @@ export class SatelliteTracker {
     return this.satellites.map((sat) => sat.mesh);
   }
 
+  searchSatellites(query, limit = 8) {
+    const normalizedQuery = String(query).trim().toUpperCase();
+
+    if (!normalizedQuery) return [];
+
+    return this.satellites
+      .filter((sat) => {
+        const name = sat.name.toUpperCase();
+        return name.includes(normalizedQuery) || sat.catalogId.includes(normalizedQuery);
+      })
+      .sort((a, b) => this.getSearchScore(a, normalizedQuery) - this.getSearchScore(b, normalizedQuery))
+      .slice(0, limit);
+  }
+
+  getSearchScore(sat, query) {
+    const name = sat.name.toUpperCase();
+
+    if (sat.catalogId === query || name === query) return 0;
+    if (sat.catalogId.startsWith(query) || name.startsWith(query)) return 1;
+    return 2;
+  }
+
   findSatelliteNearScreenPoint(x, y, camera, domElement, maxDistancePx = 12) {
     const rect = domElement.getBoundingClientRect();
     let nearestSatellite = null;

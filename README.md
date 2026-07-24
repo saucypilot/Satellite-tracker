@@ -12,6 +12,7 @@ The application renders Earth and its surrounding space environment, propagates 
 - Real-time satellite position propagation from TLE data
 - Live satellite data loaded from CelesTrak
 - Multiple selectable satellite groups with color coding
+- Search loaded satellites by name or NORAD catalog ID, with matching results as you type
 - Support for up to 3,000 displayed satellites
 - Click a satellite to view its orbital information
 - Double-click a satellite to follow it with the camera
@@ -39,6 +40,7 @@ The application renders Earth and its surrounding space environment, propagates 
 | Select a satellite | Single-click a satellite |
 | Track a satellite | Double-click a satellite |
 | Inspect a satellite | Hover over a satellite |
+| Find a satellite | Search by name or NORAD ID, then choose a result |
 | Reset the camera | Use the reset-view control |
 | Display the Moon's orbit | Click the Moon |
 | Predict a pass | Select a satellite, enter a ground station, and run the prediction |
@@ -58,7 +60,7 @@ The application renders Earth and its surrounding space environment, propagates 
 2. Each satellite's TLE is converted into an SGP4 satellite record using satellite.js.
 3. On every animation frame, the current satellite position is propagated in Earth-centered inertial coordinates.
 4. The position is transformed and scaled into the Three.js scene.
-5. Selecting a satellite draws a predicted orbital path and exposes its orbital data.
+5. Selecting a satellite, either from the scene or search, draws a predicted orbital path, moves the camera to it, and exposes its orbital data.
 6. Pass prediction searches forward from the current time for horizon crossings relative to a chosen ground station.
 7. The predicted pass is sampled to calculate maximum elevation, duration, range, azimuth, and likely visibility conditions.
 
@@ -140,7 +142,6 @@ This project is intended for visualization, education, and portfolio demonstrati
 
 ## Potential Improvements
 
-- Satellite search by name or NORAD catalog ID
 - Time controls and orbital playback
 - Ground tracks and coverage footprints
 - Conjunction and close-approach visualization

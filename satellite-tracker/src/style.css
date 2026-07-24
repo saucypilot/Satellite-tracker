@@ -188,6 +188,68 @@ canvas {
   gap: 8px;
 }
 
+.satellite-search {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.satellite-search label {
+  color: #e7edf8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.satellite-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  color: #e7edf8;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(102, 204, 255, 0.42);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.satellite-search input:focus-visible {
+  outline: 2px solid #66ccff;
+  outline-offset: 2px;
+}
+
+.satellite-search-results {
+  display: grid;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+}
+
+.satellite-search-result {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  color: #e7edf8;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.satellite-search-result:last-child {
+  border-bottom: 0;
+}
+
+.satellite-search-result:hover,
+.satellite-search-result:focus-visible {
+  background: rgba(102, 204, 255, 0.18);
+}
+
+.satellite-search-result span {
+  color: #a9b6c8;
+  font-size: 12px;
+}
+
 .satellite-group-option {
   display: grid;
   grid-template-columns: 18px 12px minmax(0, 1fr);

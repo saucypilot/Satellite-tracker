@@ -44,6 +44,8 @@ class SatelliteTrackerApp {
       selectedGroups: DEFAULT_SELECTED_GROUPS,
       groupColors: SATELLITE_GROUP_COLOR_HEX,
       onChange: (groups) => this.loadSatelliteGroups(groups),
+      onSatelliteSearch: (query) => this.satelliteTracker.searchSatellites(query),
+      onSatelliteSelect: (sat) => this.selectSatelliteFromSearch(sat),
       onResetView: () => this.resetCameraView(),
       onPredictPass: (groundStation) => this.predictSelectedSatellitePass(groundStation),
       onUseCurrentLocation: () => this.useCurrentLocationForGroundStation(),
@@ -145,6 +147,7 @@ class SatelliteTrackerApp {
     try {
       const result = await this.satelliteTracker.load(groups);
       this.groupSelector.setStatus(this.createLoadStatus(result));
+      this.groupSelector.refreshSatelliteSearch();
     } catch (error) {
       console.error("Unable to load satellite data:", error);
       this.groupSelector.setStatus(
@@ -358,6 +361,18 @@ class SatelliteTrackerApp {
 
     if (!sat) return;
 
+    this.spaceEnvironment.hideMoonOrbit();
+    this.trackedSatellite = sat;
+    this.selectedSatellite = this.satelliteTracker.selectSatellite(
+      sat,
+      this.getDisplayDate()
+    );
+    this.groupSelector.setSelectedSatellite(this.selectedSatellite);
+    this.updateHistoryTrail();
+    this.updateTrackingCamera(true);
+  }
+
+  selectSatelliteFromSearch(sat) {
     this.spaceEnvironment.hideMoonOrbit();
     this.trackedSatellite = sat;
     this.selectedSatellite = this.satelliteTracker.selectSatellite(

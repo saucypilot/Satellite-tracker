@@ -7,6 +7,8 @@ export class SatelliteGroupSelector {
     selectedGroups,
     groupColors,
     onChange,
+    onSatelliteSearch,
+    onSatelliteSelect,
     onResetView,
     onPredictPass,
     onUseCurrentLocation,
@@ -20,6 +22,8 @@ export class SatelliteGroupSelector {
     this.selectedGroups = new Set(selectedGroups);
     this.groupColors = groupColors;
     this.onChange = onChange;
+    this.onSatelliteSearch = onSatelliteSearch;
+    this.onSatelliteSelect = onSatelliteSelect;
     this.onResetView = onResetView;
     this.onPredictPass = onPredictPass;
     this.onUseCurrentLocation = onUseCurrentLocation;
@@ -33,6 +37,10 @@ export class SatelliteGroupSelector {
     this.timelineElement = this.createTimelineControls();
     this.statusElement = this.element.querySelector("[data-status]");
     this.selectedElement = this.element.querySelector("[data-selected]");
+    this.searchInput = this.element.querySelector("[data-satellite-search]");
+    this.searchResultsElement = this.element.querySelector(
+      "[data-satellite-search-results]"
+    );
     this.stationNameInput = this.element.querySelector("[data-station-name]");
     this.stationLatInput = this.element.querySelector("[data-station-lat]");
     this.stationLonInput = this.element.querySelector("[data-station-lon]");
@@ -127,6 +135,8 @@ export class SatelliteGroupSelector {
       list.appendChild(this.createGroupOption(group));
     }
 
+    const search = this.createSatelliteSearch();
+
     const status = document.createElement("div");
     status.className = "satellite-status";
     status.dataset.status = "";
@@ -147,6 +157,7 @@ export class SatelliteGroupSelector {
     selected.dataset.selected = "";
     selected.textContent = "No satellite selected";
 
+    body.appendChild(search);
     body.appendChild(list);
     body.appendChild(status);
     body.appendChild(controls);
@@ -157,6 +168,76 @@ export class SatelliteGroupSelector {
     panel.appendChild(this.createResizeHandle());
 
     return panel;
+  }
+
+  createSatelliteSearch() {
+    const search = document.createElement("div");
+    search.className = "satellite-search";
+
+    const label = document.createElement("label");
+    label.htmlFor = "satellite-search-input";
+    label.textContent = "Find a satellite";
+
+    const input = document.createElement("input");
+    input.id = "satellite-search-input";
+    input.type = "search";
+    input.placeholder = "Name or NORAD ID";
+    input.autocomplete = "off";
+    input.dataset.satelliteSearch = "";
+    input.setAttribute("aria-label", "Find a satellite by name or NORAD ID");
+
+    const results = document.createElement("div");
+    results.className = "satellite-search-results";
+    results.dataset.satelliteSearchResults = "";
+    results.hidden = true;
+
+    input.addEventListener("input", () => this.updateSatelliteSearchResults());
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        const firstResult = results.querySelector("button");
+        if (firstResult) firstResult.click();
+      }
+
+      if (event.key === "Escape") {
+        input.value = "";
+        this.updateSatelliteSearchResults();
+        input.blur();
+      }
+    });
+
+    search.append(label, input, results);
+    return search;
+  }
+
+  updateSatelliteSearchResults() {
+    const query = this.searchInput?.value.trim() ?? "";
+    const results = query ? this.onSatelliteSearch?.(query) ?? [] : [];
+
+    this.searchResultsElement.replaceChildren();
+    this.searchResultsElement.hidden = results.length === 0;
+
+    for (const sat of results) {
+      const button = document.createElement("button");
+      const name = document.createElement("strong");
+      const catalogId = document.createElement("span");
+
+      button.type = "button";
+      button.className = "satellite-search-result";
+      name.textContent = sat.name;
+      catalogId.textContent = `NORAD ${sat.catalogId}`;
+      button.append(name, catalogId);
+      button.addEventListener("click", () => {
+        this.onSatelliteSelect?.(sat);
+        this.searchInput.value = sat.name;
+        this.searchResultsElement.hidden = true;
+        this.searchResultsElement.replaceChildren();
+      });
+      this.searchResultsElement.appendChild(button);
+    }
+  }
+
+  refreshSatelliteSearch() {
+    this.updateSatelliteSearchResults();
   }
 
   toggleSatellitePanel(panel, button) {
